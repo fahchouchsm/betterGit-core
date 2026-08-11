@@ -2,34 +2,46 @@ package io.fahchouchsm.betterGitCore.ai;
 
 import java.io.IOException;
 import java.net.URI;
+import java.net.URLEncoder;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.Map;
 import java.util.Objects;
 
 /**
- * Sends text to an OpenAI-compatible Responses API and returns the generated text.
- * The API key is supplied at construction time and is never stored on disk.
+ * Sends text to a Gemini generateContent endpoint and returns the generated text.
+ * Connection settings are supplied by the caller or environment variables.
  */
 public final class AiSystem {
-    public static final URI DEFAULT_ENDPOINT = URI.create("https://api.openai.com/v1/responses");
-    public static final String DEFAULT_MODEL = "gpt-5.6-luna";
-
     private final String apiKey;
-    private final String model;
     private final URI endpoint;
     private final HttpClient httpClient;
 
-    public AiSystem(String apiKey) {
-        this(apiKey, DEFAULT_MODEL, DEFAULT_ENDPOINT);
-    }
-
-    public AiSystem(String apiKey, String model, URI endpoint) {
+    public AiSystem(String apiKey, URI endpoint) {
         this.apiKey = requireText(apiKey, "apiKey");
-        this.model = requireText(model, "model");
         this.endpoint = Objects.requireNonNull(endpoint, "endpoint must not be null");
         this.httpClient = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(20)).build();
+    }
+
+    /** Creates a client from AI_API_KEY, AI_MODEL, and AI_API_URL_TEMPLATE. */
+    public static AiSystem fromEnvironment() {
+        return fromConfiguration(System.getenv());
+    }
+
+    /** Creates a client from the supplied AI_API_KEY, AI_MODEL, and AI_API_URL_TEMPLATE values. */
+    public static AiSystem fromConfiguration(Map<String, String> configuration) {
+        Objects.requireNonNull(configuration, "configuration must not be null");
+        String apiKey = requireText(configuration.get("AI_API_KEY"), "AI_API_KEY");
+        String model = requireText(configuration.get("AI_MODEL"), "AI_MODEL");
+        String urlTemplate = requireText(configuration.get("AI_API_URL_TEMPLATE"), "AI_API_URL_TEMPLATE");
+        if (!urlTemplate.contains("{model}")) {
+            throw new IllegalArgumentException("AI_API_URL_TEMPLATE must contain {model}");
+        }
+        String encodedModel = URLEncoder.encode(model, StandardCharsets.UTF_8);
+        return new AiSystem(apiKey, URI.create(urlTemplate.replace("{model}", encodedModel)));
     }
 
     /**
@@ -37,11 +49,11 @@ public final class AiSystem {
      * @return the text produced by the AI
      */
     public String generate(String input) throws IOException, InterruptedException {
-        String body = "{\"model\":\"" + jsonEscape(model) + "\",\"input\":\""
-                + jsonEscape(requireText(input, "input")) + "\",\"store\":false}";
+        String body = "{\"contents\":[{\"parts\":[{\"text\":\""
+                + jsonEscape(requireText(input, "input")) + "\"}]}]}";
         HttpRequest request = HttpRequest.newBuilder(endpoint)
                 .timeout(Duration.ofSeconds(90))
-                .header("Authorization", "Bearer " + apiKey)
+                .header("X-goog-api-key", apiKey)
                 .header("Content-Type", "application/json")
                 .POST(HttpRequest.BodyPublishers.ofString(body))
                 .build();
@@ -66,11 +78,8 @@ public final class AiSystem {
     static String extractOutputText(String json) throws IOException {
         StringBuilder output = new StringBuilder();
         int position = 0;
-        while ((position = json.indexOf("\"type\":\"output_text\"", position)) >= 0) {
-            int textKey = json.indexOf("\"text\":", position);
-            if (textKey < 0) {
-                break;
-            }
+        while ((position = json.indexOf("\"text\":", position)) >= 0) {
+            int textKey = position;
             int quote = json.indexOf('"', textKey + 7);
             if (quote < 0) {
                 throw new IOException("Invalid JSON text output from AI service.");
