@@ -1,22 +1,31 @@
 package io.fahchouchsm.betterGitCore.ai;
 
-import junit.framework.TestCase;
+import org.junit.jupiter.api.Test;
 
 import java.net.URI;
 
-public class AiSystemTest extends TestCase {
-    public void testExtractsAndUnescapesOutputText() throws Exception {
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+
+class AiSystemTest {
+    @Test
+    void extractsAndUnescapesOutputText() throws Exception {
         String response = "{\"candidates\":[{\"content\":{\"parts\":["
                 + "{\"text\":\"First line\\nSecond line\"}]}}]}";
         assertEquals("First line\nSecond line", AiSystem.extractOutputText(response));
     }
 
-    public void testRejectsBlankKey() {
-        try {
-            new AiSystem(" ", URI.create("https://example.test"));
-            fail("Expected an IllegalArgumentException");
-        } catch (IllegalArgumentException expected) {
-            assertEquals("apiKey must not be blank", expected.getMessage());
-        }
+    @Test
+    void rejectsBlankKey() {
+        AiConfigurationException exception = assertThrows(AiConfigurationException.class,
+                () -> new AiSystem(" ", URI.create("https://example.test")));
+
+        assertEquals("apiKey must not be blank", exception.getMessage());
+    }
+
+    @Test
+    void rejectsResponsesWithoutCandidateParts() {
+        assertThrows(AiResponseException.class,
+                () -> AiSystem.extractOutputText("{\"text\":\"not generated content\"}"));
     }
 }

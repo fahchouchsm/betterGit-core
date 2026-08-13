@@ -1,22 +1,30 @@
 package io.fahchouchsm.betterGitCore.ai;
 
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParseException;
+import com.google.gson.JsonParser;
+
 import java.io.IOException;
 import java.net.URI;
 import java.net.URLEncoder;
-import java.net.http.HttpTimeoutException;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.net.http.HttpTimeoutException;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Map;
-import java.util.Objects;
 
 /**
  * Sends text to a Gemini generateContent endpoint and returns the generated text.
  * Connection settings are supplied by the caller or environment variables.
  */
 public final class AiSystem {
+    private static final Duration CONNECTION_TIMEOUT = Duration.ofSeconds(20);
+    private static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(90);
+
     private final String apiKey;
     private final URI endpoint;
     private final HttpClient httpClient;
@@ -24,7 +32,7 @@ public final class AiSystem {
     public AiSystem(String apiKey, URI endpoint) {
         this.apiKey = requireText(apiKey, "apiKey");
         this.endpoint = requireEndpoint(endpoint);
-        this.httpClient = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(20)).build();
+        this.httpClient = HttpClient.newBuilder().connectTimeout(CONNECTION_TIMEOUT).build();
     }
 
     /** Creates a client from AI_API_KEY, AI_MODEL, and AI_API_URL_TEMPLATE. */
@@ -56,26 +64,45 @@ public final class AiSystem {
      * @return the text produced by the AI
      */
     public String generate(String input) throws IOException, InterruptedException {
-        String body = "{\"contents\":[{\"parts\":[{\"text\":\""
-                + jsonEscape(requireInput(input)) + "\"}]}]}";
         HttpRequest request = HttpRequest.newBuilder(endpoint)
-                .timeout(Duration.ofSeconds(90))
+                .timeout(REQUEST_TIMEOUT)
                 .header("X-goog-api-key", apiKey)
                 .header("Content-Type", "application/json")
-                .POST(HttpRequest.BodyPublishers.ofString(body))
+                .POST(HttpRequest.BodyPublishers.ofString(createRequestBody(requireInput(input))))
                 .build();
-        HttpResponse<String> response;
+        HttpResponse<String> response = send(request);
+        ensureSuccess(response);
+        return extractOutputText(response.body());
+    }
+
+    private HttpResponse<String> send(HttpRequest request) throws AiConnectionException, InterruptedException {
         try {
-            response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            return httpClient.send(request, HttpResponse.BodyHandlers.ofString());
         } catch (HttpTimeoutException exception) {
             throw new AiConnectionException("The AI service did not respond before the request timeout.", exception);
         } catch (IOException exception) {
             throw new AiConnectionException("Could not connect to the AI service.", exception);
         }
+    }
+
+    private static void ensureSuccess(HttpResponse<String> response) throws AiRequestException {
         if (response.statusCode() < 200 || response.statusCode() >= 300) {
             throw new AiRequestException(response.statusCode(), response.body());
         }
-        return extractOutputText(response.body());
+    }
+
+    private static String createRequestBody(String input) {
+        JsonObject textPart = new JsonObject();
+        textPart.addProperty("text", input);
+        JsonArray parts = new JsonArray();
+        parts.add(textPart);
+        JsonObject content = new JsonObject();
+        content.add("parts", parts);
+        JsonArray contents = new JsonArray();
+        contents.add(content);
+        JsonObject request = new JsonObject();
+        request.add("contents", contents);
+        return request.toString();
     }
 
     private static String requireText(String value, String name) {
@@ -99,6 +126,9 @@ public final class AiSystem {
         if (!"http".equalsIgnoreCase(endpoint.getScheme()) && !"https".equalsIgnoreCase(endpoint.getScheme())) {
             throw new AiConfigurationException("endpoint must use HTTP or HTTPS");
         }
+        if (endpoint.getHost() == null || endpoint.getHost().isBlank()) {
+            throw new AiConfigurationException("endpoint must include a host");
+        }
         return endpoint;
     }
 
@@ -106,60 +136,48 @@ public final class AiSystem {
         if (json == null || json.isBlank()) {
             throw new AiResponseException("The AI service returned an empty response.");
         }
-        StringBuilder output = new StringBuilder();
-        int position = 0;
-        while ((position = json.indexOf("\"text\":", position)) >= 0) {
-            int textKey = position;
-            int quote = json.indexOf('"', textKey + 7);
-            if (quote < 0) {
-                throw new AiResponseException("The AI service returned malformed text output.");
-            }
-            int end = findStringEnd(json, quote + 1);
-            output.append(unescapeJson(json.substring(quote + 1, end)));
-            position = end + 1;
+        try {
+            return generatedText(JsonParser.parseString(json).getAsJsonObject());
+        } catch (JsonParseException | IllegalStateException exception) {
+            throw new AiResponseException("The AI service returned malformed JSON.", exception);
         }
-        if (output.isEmpty()) {
+    }
+
+    private static String generatedText(JsonObject response) throws AiResponseException {
+        StringBuilder generatedText = new StringBuilder();
+        for (JsonElement candidateElement : requiredArray(response, "candidates")) {
+            JsonObject candidate = requiredObject(candidateElement, "candidate");
+            JsonObject content = requiredObject(candidate.get("content"), "candidate content");
+            appendPartText(generatedText, requiredArray(content, "parts"));
+        }
+        if (generatedText.isEmpty()) {
             throw new AiResponseException("The AI response did not contain generated text.");
         }
-        return output.toString();
+        return generatedText.toString();
     }
 
-    private static int findStringEnd(String value, int start) throws AiResponseException {
-        boolean escaped = false;
-        for (int i = start; i < value.length(); i++) {
-            char character = value.charAt(i);
-            if (character == '"' && !escaped) return i;
-            escaped = character == '\\' && !escaped;
-            if (character != '\\') escaped = false;
-        }
-        throw new AiResponseException("The AI service returned an unterminated JSON string.");
-    }
-
-    private static String jsonEscape(String value) {
-        return value.replace("\\", "\\\\").replace("\"", "\\\"")
-                .replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t");
-    }
-
-    private static String unescapeJson(String value) throws AiResponseException {
-        StringBuilder result = new StringBuilder();
-        for (int i = 0; i < value.length(); i++) {
-            char character = value.charAt(i);
-            if (character != '\\') { result.append(character); continue; }
-            if (++i == value.length()) throw new AiResponseException("The AI service returned an invalid JSON escape sequence.");
-            switch (value.charAt(i)) {
-                case '"' -> result.append('"'); case '\\' -> result.append('\\');
-                case '/' -> result.append('/'); case 'b' -> result.append('\b');
-                case 'f' -> result.append('\f'); case 'n' -> result.append('\n');
-                case 'r' -> result.append('\r'); case 't' -> result.append('\t');
-                case 'u' -> {
-                    if (i + 4 >= value.length()) throw new AiResponseException("The AI service returned an invalid Unicode escape.");
-                    try { result.append((char) Integer.parseInt(value.substring(i + 1, i + 5), 16)); }
-                    catch (NumberFormatException error) { throw new AiResponseException("The AI service returned an invalid Unicode escape.", error); }
-                    i += 4;
-                }
-                default -> throw new AiResponseException("The AI service returned an invalid JSON escape sequence.");
+    private static void appendPartText(StringBuilder generatedText, JsonArray parts) throws AiResponseException {
+        for (JsonElement partElement : parts) {
+            JsonObject part = requiredObject(partElement, "candidate part");
+            JsonElement text = part.get("text");
+            if (text != null && text.isJsonPrimitive() && text.getAsJsonPrimitive().isString()) {
+                generatedText.append(text.getAsString());
             }
         }
-        return result.toString();
+    }
+
+    private static JsonArray requiredArray(JsonObject parent, String fieldName) throws AiResponseException {
+        JsonElement field = parent.get(fieldName);
+        if (field == null || !field.isJsonArray()) {
+            throw new AiResponseException("The AI response did not contain " + fieldName + ".");
+        }
+        return field.getAsJsonArray();
+    }
+
+    private static JsonObject requiredObject(JsonElement element, String description) throws AiResponseException {
+        if (element == null || !element.isJsonObject()) {
+            throw new AiResponseException("The AI response did not contain a valid " + description + ".");
+        }
+        return element.getAsJsonObject();
     }
 }
