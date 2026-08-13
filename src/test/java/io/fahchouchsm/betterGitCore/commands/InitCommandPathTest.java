@@ -4,9 +4,15 @@ import io.fahchouchsm.betterGitCore.testsupport.TestConfiguration;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 
+import java.io.ByteArrayInputStream;
+import java.io.PrintWriter;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Clock;
 import java.util.Map;
+
+import io.fahchouchsm.betterGitCore.JGitManager.JGitManager;
+import io.fahchouchsm.betterGitCore.commands.console.SystemConsoleAdapter;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -21,7 +27,17 @@ class InitCommandPathTest {
                 "Set RUN_LIVE_TESTS=true and BETTERGIT_INIT_PROJECT_PATH in .env.test.");
         Path projectPath = Path.of(configuredPath).toAbsolutePath().normalize();
 
-        int exitCode = BetterGitCli.run(new String[]{"init"}, projectPath, new DefaultAnswerConsole());
+        SystemConsoleAdapter console = new SystemConsoleAdapter(
+                new ByteArrayInputStream(new byte[0]),
+                new PrintWriter(System.out, true),
+                new PrintWriter(System.err, true));
+        int exitCode = CommandRunner.execute(new String[]{"init", "--yes"}, new CommandRuntime(
+                projectPath,
+                console,
+                new JGitRepositoryAccess(new JGitManager()),
+                Map.of(),
+                Clock.systemUTC(),
+                (aiConfiguration, prompt) -> "# Generated"));
 
         assertEquals(InitCommand.SUCCESS, exitCode);
         assertTrue(Files.isRegularFile(projectPath.resolve(".bettergit/config.json")));
@@ -32,18 +48,5 @@ class InitCommandPathTest {
         return "true".equalsIgnoreCase(configuration.get("RUN_LIVE_TESTS"))
                 && configuredPath != null
                 && !configuredPath.isBlank();
-    }
-
-    private static final class DefaultAnswerConsole implements CommandConsole {
-        @Override
-        public String readLine(String prompt) {
-            System.out.println(prompt + "[default: no]");
-            return "";
-        }
-
-        @Override
-        public void println(String message) {
-            System.out.println(message);
-        }
     }
 }

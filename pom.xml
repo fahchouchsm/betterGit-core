@@ -11,9 +11,16 @@
   <properties>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <maven.compiler.release>21</maven.compiler.release>
+    <picocli.version>4.7.7</picocli.version>
   </properties>
 
   <dependencies>
+    <dependency>
+      <groupId>info.picocli</groupId>
+      <artifactId>picocli</artifactId>
+      <version>${picocli.version}</version>
+    </dependency>
+
     <dependency>
       <groupId>org.junit.jupiter</groupId>
       <artifactId>junit-jupiter-api</artifactId>
@@ -56,8 +63,12 @@
         <version>3.4.2</version>
         <configuration>
           <archive>
+            <manifestEntries>
+              <Implementation-Title>BetterGit</Implementation-Title>
+              <Implementation-Version>${project.version}</Implementation-Version>
+            </manifestEntries>
             <manifest>
-              <mainClass>io.fahchouchsm.betterGitCore.commands.BetterGitCli</mainClass>
+              <mainClass>io.fahchouchsm.betterGitCore.commands.CommandRunner</mainClass>
             </manifest>
           </archive>
         </configuration>
@@ -89,7 +100,7 @@
               </filters>
               <transformers>
                 <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
-                  <mainClass>io.fahchouchsm.betterGitCore.commands.BetterGitCli</mainClass>
+                  <mainClass>io.fahchouchsm.betterGitCore.commands.CommandRunner</mainClass>
                 </transformer>
               </transformers>
             </configuration>

@@ -6,6 +6,13 @@ import java.nio.charset.StandardCharsets;
 
 /** AI credentials and endpoint settings held in memory only. */
 public record AiConfiguration(String apiKey, String model, String apiUrl) {
+    @Override
+    public String toString() {
+        return "AiConfiguration[apiKeyConfigured=" + hasApiKey()
+                + ", modelConfigured=" + hasText(model)
+                + ", apiUrlConfigured=" + hasText(apiUrl) + "]";
+    }
+
     public boolean hasApiKey() {
         return apiKey != null && !apiKey.isBlank();
     }

@@ -2,6 +2,10 @@ package io.fahchouchsm.betterGitCore.commands;
 
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import io.fahchouchsm.betterGitCore.commands.init.BetterGitInitializer;
+import io.fahchouchsm.betterGitCore.commands.init.InitConfiguration;
+import io.fahchouchsm.betterGitCore.commands.init.InitializationDependencies;
+import io.fahchouchsm.betterGitCore.commands.init.InitializationMode;
 import io.fahchouchsm.betterGitCore.configuration.AiConfigurationLoader;
 import io.fahchouchsm.betterGitCore.configuration.BetterGitFileStore;
 import io.fahchouchsm.betterGitCore.documentation.AiTextGenerator;
@@ -17,16 +21,13 @@ import java.nio.file.Path;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
-import java.util.ArrayDeque;
-import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.List;
 import java.util.Map;
-import java.util.Queue;
 import java.util.function.Consumer;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class InitCommandTest {
@@ -42,54 +43,97 @@ class InitCommandTest {
     void existingGitRepositoryIsNeverInitialized() throws Exception {
         createJavaProject();
         RecordingRepositoryAccess repository = new RecordingRepositoryAccess(true);
-        int exitCode = command(repository, new RecordingConsole("", "", ""), Map.of(), successfulAi()).execute(projectPath);
 
-        assertEquals(InitCommand.SUCCESS, exitCode);
+        initialize(repository, new RecordingConsole("", "", ""), Map.of(), successfulAi(), false);
+
         assertEquals(0, repository.initializationCount);
         assertTrue(configuration().get("gitAlreadyExisted").getAsBoolean());
     }
 
     @Test
-    void initializesGitOnlyAfterSetupFilesExist() {
+    void initializesGitOnlyAfterEverySetupFileExists() throws Exception {
+        Files.writeString(projectPath.resolve(".env"), "AI_API_KEY=local-key\n");
         RecordingRepositoryAccess repository = new RecordingRepositoryAccess(false);
         repository.beforeInitialization = initializedPath -> {
             assertTrue(Files.isRegularFile(initializedPath.resolve(".bettergit/config.json")));
             assertTrue(Files.isRegularFile(initializedPath.resolve(".bettergit/general.md")));
+            assertTrue(readUnchecked(initializedPath.resolve(".gitignore")).contains(".env"));
         };
 
-        int exitCode = command(repository, new RecordingConsole(), Map.of(), successfulAi()).execute(projectPath);
+        initialize(repository, new RecordingConsole(), Map.of(), successfulAi(), false);
 
-        assertEquals(InitCommand.SUCCESS, exitCode);
         assertEquals(1, repository.initializationCount);
+    }
+
+    @Test
+    void setupFailurePreventsGitInitialization() throws Exception {
+        Files.writeString(projectPath.resolve(".bettergit"), "blocks directory creation");
+        RecordingRepositoryAccess repository = new RecordingRepositoryAccess(false);
+
+        assertThrows(IOException.class, () ->
+                initialize(repository, new RecordingConsole(), Map.of(), successfulAi(), false));
+
+        assertEquals(0, repository.initializationCount);
+    }
+
+    @Test
+    void symbolicBetterGitDirectoryIsRejectedWithoutInitializingGit() throws Exception {
+        Path redirectedDirectory = Files.createDirectory(projectPath.resolve("redirected"));
+        Files.createSymbolicLink(projectPath.resolve(".bettergit"), redirectedDirectory);
+        RecordingRepositoryAccess repository = new RecordingRepositoryAccess(false);
+
+        assertThrows(IOException.class, () ->
+                initialize(repository, new RecordingConsole(), Map.of(), successfulAi(), false));
+
+        assertEquals(0, repository.initializationCount);
+        assertFalse(Files.exists(redirectedDirectory.resolve("config.json")));
     }
 
     @Test
     void nonJavaProjectUsesLimitedModeWithoutQuestions() throws Exception {
         RecordingConsole console = new RecordingConsole();
 
-        int exitCode = command(new RecordingRepositoryAccess(true), console, Map.of(), successfulAi())
-                .execute(projectPath);
+        initialize(new RecordingRepositoryAccess(true), console, Map.of(), successfulAi(), false);
 
-        assertEquals(InitCommand.SUCCESS, exitCode);
         assertTrue(console.output().contains("limited mode"));
-        assertTrue(console.prompts.isEmpty());
-        assertEquals("LIMITED", configuration().get("projectType").getAsString());
+        assertTrue(console.output().contains("Java code analysis during commits"));
+        assertTrue(console.prompts().isEmpty());
+        assertFalse(configuration().get("javaDetected").getAsBoolean());
     }
 
     @Test
-    void persistsJavaFeatureSettings() throws Exception {
+    void persistsJavaFeatureSettingsAndProjectFacts() throws Exception {
         createJavaProject();
 
-        int exitCode = command(
-                new RecordingRepositoryAccess(true), new RecordingConsole("y", "n", "yes"), Map.of(), successfulAi())
-                .execute(projectPath);
+        initialize(
+                new RecordingRepositoryAccess(true),
+                new RecordingConsole("y", "n", "yes"),
+                Map.of(),
+                successfulAi(),
+                false);
 
-        JsonObject settings = configuration().getAsJsonObject("settings");
-        assertEquals(InitCommand.SUCCESS, exitCode);
+        JsonObject persisted = configuration();
+        JsonObject settings = persisted.getAsJsonObject("settings");
         assertTrue(settings.get("classDiagramOnCommit").getAsBoolean());
         assertFalse(settings.get("testDurationTracking").getAsBoolean());
         assertTrue(settings.get("sonarQubeDocumentation").getAsBoolean());
-        assertEquals("2026-08-13T12:00:00Z", configuration().get("initializedAt").getAsString());
+        assertEquals("2026-08-13T12:00:00Z", persisted.get("createdAt").getAsString());
+        assertEquals(projectPath.toAbsolutePath().normalize().toString(), persisted.get("projectPath").getAsString());
+        assertTrue(persisted.get("javaDetected").getAsBoolean());
+    }
+
+    @Test
+    void acceptDefaultsDisablesOptionalFeaturesWithoutQuestions() throws Exception {
+        createJavaProject();
+        RecordingConsole console = new RecordingConsole("yes", "yes", "yes");
+
+        initialize(new RecordingRepositoryAccess(true), console, Map.of(), successfulAi(), true);
+
+        JsonObject settings = configuration().getAsJsonObject("settings");
+        assertTrue(console.prompts().isEmpty());
+        assertFalse(settings.get("classDiagramOnCommit").getAsBoolean());
+        assertFalse(settings.get("testDurationTracking").getAsBoolean());
+        assertFalse(settings.get("sonarQubeDocumentation").getAsBoolean());
     }
 
     @Test
@@ -97,14 +141,17 @@ class InitCommandTest {
         Files.writeString(projectPath.resolve("README.md"), "# Sample\nRun with Maven.");
         AiTextGenerator generator = (configuration, prompt) -> {
             assertTrue(prompt.contains("Run with Maven"));
+            assertTrue(prompt.contains("invent facts"));
             return "# Generated overview\n";
         };
 
-        int exitCode = command(
-                new RecordingRepositoryAccess(true), new RecordingConsole(), COMPLETE_AI_ENVIRONMENT, generator)
-                .execute(projectPath);
+        initialize(
+                new RecordingRepositoryAccess(true),
+                new RecordingConsole(),
+                COMPLETE_AI_ENVIRONMENT,
+                generator,
+                false);
 
-        assertEquals(InitCommand.SUCCESS, exitCode);
         assertEquals("# Generated overview\n", Files.readString(projectPath.resolve(".bettergit/general.md")));
         assertTrue(configuration().get("aiDocumentationAvailable").getAsBoolean());
     }
@@ -117,32 +164,46 @@ class InitCommandTest {
         };
         RecordingRepositoryAccess repository = new RecordingRepositoryAccess(false);
 
-        int exitCode = command(repository, new RecordingConsole(), COMPLETE_AI_ENVIRONMENT, failingGenerator)
-                .execute(projectPath);
+        initialize(repository, new RecordingConsole(), COMPLETE_AI_ENVIRONMENT, failingGenerator, false);
 
         String documentation = Files.readString(projectPath.resolve(".bettergit/general.md"));
-        assertEquals(InitCommand.SUCCESS, exitCode);
         assertEquals(1, repository.initializationCount);
         assertTrue(documentation.contains("AI request failed"));
         assertFalse(documentation.contains("provider unavailable"));
     }
 
     @Test
-    void apiKeyIsNeverPersisted() throws Exception {
+    void blankAiResponseCreatesPlaceholderAndInitializationSucceeds() throws Exception {
+        Files.writeString(projectPath.resolve("README.md"), "# Sample");
+        RecordingRepositoryAccess repository = new RecordingRepositoryAccess(false);
+
+        initialize(repository, new RecordingConsole(), COMPLETE_AI_ENVIRONMENT,
+                (configuration, prompt) -> "   ", false);
+
+        String documentation = Files.readString(projectPath.resolve(".bettergit/general.md"));
+        assertEquals(1, repository.initializationCount);
+        assertTrue(documentation.contains("AI request failed"));
+    }
+
+    @Test
+    void apiKeyIsNeverPersistedOrPrinted() throws Exception {
         Files.writeString(projectPath.resolve("README.md"), "# Sample");
         AiTextGenerator leakingGenerator = (configuration, prompt) -> "Accidental " + configuration.apiKey();
         RecordingConsole console = new RecordingConsole();
 
-        int exitCode = command(
-                new RecordingRepositoryAccess(true), console, COMPLETE_AI_ENVIRONMENT, leakingGenerator)
-                .execute(projectPath);
+        initialize(
+                new RecordingRepositoryAccess(true),
+                console,
+                COMPLETE_AI_ENVIRONMENT,
+                leakingGenerator,
+                false);
 
-        String configuration = Files.readString(projectPath.resolve(".bettergit/config.json"));
+        String persistedConfiguration = Files.readString(projectPath.resolve(".bettergit/config.json"));
         String documentation = Files.readString(projectPath.resolve(".bettergit/general.md"));
-        assertEquals(InitCommand.SUCCESS, exitCode);
-        assertFalse(configuration.contains("secret-api-key"));
+        assertFalse(persistedConfiguration.contains("secret-api-key"));
         assertFalse(documentation.contains("secret-api-key"));
         assertFalse(console.output().contains("secret-api-key"));
+        assertFalse(console.errors().contains("secret-api-key"));
         assertTrue(documentation.contains("[REDACTED]"));
     }
 
@@ -151,12 +212,11 @@ class InitCommandTest {
         createJavaProject();
         RecordingConsole console = new RecordingConsole("maybe", "y", "later", "", "YES");
 
-        int exitCode = command(new RecordingRepositoryAccess(true), console, Map.of(), successfulAi())
-                .execute(projectPath);
+        initialize(new RecordingRepositoryAccess(true), console, Map.of(), successfulAi(), false);
 
         JsonObject settings = configuration().getAsJsonObject("settings");
-        assertEquals(InitCommand.SUCCESS, exitCode);
-        assertEquals(5, console.prompts.size());
+        assertEquals(5, console.prompts().size());
+        assertTrue(console.output().contains("Please answer y, yes, n, or no"));
         assertTrue(settings.get("classDiagramOnCommit").getAsBoolean());
         assertFalse(settings.get("testDurationTracking").getAsBoolean());
         assertTrue(settings.get("sonarQubeDocumentation").getAsBoolean());
@@ -167,21 +227,20 @@ class InitCommandTest {
         Files.writeString(projectPath.resolve(".env"), "AI_API_KEY=local-key\n");
         Files.writeString(projectPath.resolve(".gitignore"), "target/\n*.log\n");
 
-        int exitCode = command(new RecordingRepositoryAccess(false), new RecordingConsole(), Map.of(), successfulAi())
-                .execute(projectPath);
+        initialize(new RecordingRepositoryAccess(false), new RecordingConsole(), Map.of(), successfulAi(), false);
 
         String gitIgnore = Files.readString(projectPath.resolve(".gitignore"));
-        assertEquals(InitCommand.SUCCESS, exitCode);
         assertTrue(gitIgnore.contains("target/\n*.log\n"));
         assertTrue(Arrays.asList(gitIgnore.split("\\R")).contains(".env"));
     }
 
-    private InitCommand command(
+    private void initialize(
             RecordingRepositoryAccess repository,
             RecordingConsole console,
             Map<String, String> environment,
-            AiTextGenerator aiTextGenerator) {
-        return new InitCommand(new InitCommandDependencies(
+            AiTextGenerator aiTextGenerator,
+            boolean acceptDefaults) throws Exception {
+        BetterGitInitializer initializer = new BetterGitInitializer(new InitializationDependencies(
                 repository,
                 console,
                 new AiConfigurationLoader(),
@@ -191,6 +250,9 @@ class InitCommandTest {
                 new BetterGitFileStore(),
                 environment,
                 Clock.fixed(Instant.parse("2026-08-13T12:00:00Z"), ZoneOffset.UTC)));
+        initializer.initialize(new InitConfiguration(
+                projectPath,
+                acceptDefaults ? InitializationMode.SAFE_DEFAULTS : InitializationMode.INTERACTIVE));
     }
 
     private JsonObject configuration() throws Exception {
@@ -201,16 +263,24 @@ class InitCommandTest {
         Files.writeString(projectPath.resolve("pom.xml"), "<project/>");
     }
 
-    private AiTextGenerator successfulAi() {
+    private static String readUnchecked(Path file) {
+        try {
+            return Files.readString(file);
+        } catch (IOException exception) {
+            throw new AssertionError(exception);
+        }
+    }
+
+    private static AiTextGenerator successfulAi() {
         return (configuration, prompt) -> "# Generated";
     }
 
-    private static final class RecordingRepositoryAccess implements RepositoryAccess {
+    static final class RecordingRepositoryAccess implements RepositoryAccess {
         private final boolean repositoryExists;
         private int initializationCount;
         private Consumer<Path> beforeInitialization = ignored -> { };
 
-        private RecordingRepositoryAccess(boolean repositoryExists) {
+        RecordingRepositoryAccess(boolean repositoryExists) {
             this.repositoryExists = repositoryExists;
         }
 
@@ -223,31 +293,6 @@ class InitCommandTest {
         public void initialize(Path projectPath) {
             beforeInitialization.accept(projectPath);
             initializationCount++;
-        }
-    }
-
-    private static final class RecordingConsole implements CommandConsole {
-        private final Queue<String> answers;
-        private final List<String> messages = new ArrayList<>();
-        private final List<String> prompts = new ArrayList<>();
-
-        private RecordingConsole(String... answers) {
-            this.answers = new ArrayDeque<>(List.of(answers));
-        }
-
-        @Override
-        public String readLine(String prompt) {
-            prompts.add(prompt);
-            return answers.isEmpty() ? "" : answers.remove();
-        }
-
-        @Override
-        public void println(String message) {
-            messages.add(message);
-        }
-
-        private String output() {
-            return String.join("\n", messages);
         }
     }
 }

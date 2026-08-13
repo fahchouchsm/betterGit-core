@@ -8,6 +8,7 @@ import java.nio.file.Path;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 
 class AiConfigurationLoaderTest {
     private final AiConfigurationLoader loader = new AiConfigurationLoader();
@@ -58,5 +59,17 @@ class AiConfigurationLoaderTest {
         assertEquals("environment-key", configuration.apiKey());
         assertEquals("environment-model", configuration.model());
         assertEquals("https://environment.example/api", configuration.apiUrl());
+    }
+
+    @Test
+    void diagnosticRepresentationDoesNotExposeAiValues() {
+        AiConfiguration configuration = new AiConfiguration(
+                "secret-key", "private-model", "https://user:password@example.test/api");
+
+        String diagnosticText = configuration.toString();
+
+        assertFalse(diagnosticText.contains("secret-key"));
+        assertFalse(diagnosticText.contains("private-model"));
+        assertFalse(diagnosticText.contains("password"));
     }
 }

@@ -42,6 +42,9 @@ public final class ProjectDocumentationGenerator {
     private DocumentationResult requestDocumentation(AiConfiguration configuration, String markdownContext) {
         try {
             String generatedDocumentation = aiTextGenerator.generate(configuration, prompt(markdownContext));
+            if (generatedDocumentation == null || generatedDocumentation.isBlank()) {
+                return new DocumentationResult(REQUEST_FAILED, DocumentationStatus.AI_REQUEST_FAILED);
+            }
             return new DocumentationResult(redactApiKey(generatedDocumentation, configuration.apiKey()),
                     DocumentationStatus.GENERATED);
         } catch (AiConfigurationException | IOException exception) {

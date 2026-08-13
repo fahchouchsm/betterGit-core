@@ -18,18 +18,23 @@ public final class BetterGitFileStore {
     public void writeInitialization(
             Path projectPath, BetterGitConfiguration configuration, String generalDocumentation) throws IOException {
         Path betterGitDirectory = projectPath.resolve(".bettergit");
+        if (Files.isSymbolicLink(betterGitDirectory)) {
+            throw new IOException("Refusing to write through a symbolic .bettergit directory.");
+        }
         Files.createDirectories(betterGitDirectory);
-        atomicWrite(betterGitDirectory.resolve("config.json"), JSON.toJson(configuration) + System.lineSeparator());
         atomicWrite(betterGitDirectory.resolve("general.md"), generalDocumentation);
+        atomicWrite(
+                betterGitDirectory.resolve("config.json"),
+                JSON.toJson(configuration) + System.lineSeparator());
     }
 
     public void ensureEnvIgnored(Path projectPath) throws IOException {
         Path gitIgnore = projectPath.resolve(".gitignore");
-        List<String> existingLines = Files.isRegularFile(gitIgnore) ? Files.readAllLines(gitIgnore) : List.of();
+        String existingContent = Files.isRegularFile(gitIgnore) ? Files.readString(gitIgnore) : "";
+        List<String> existingLines = existingContent.lines().toList();
         if (existingLines.stream().map(String::trim).anyMatch(this::ignoresEnvFile)) {
             return;
         }
-        String existingContent = Files.isRegularFile(gitIgnore) ? Files.readString(gitIgnore) : "";
         String separator = existingContent.isEmpty() || existingContent.endsWith("\n") ? "" : System.lineSeparator();
         atomicWrite(gitIgnore, existingContent + separator + ".env" + System.lineSeparator());
     }
@@ -39,13 +44,17 @@ public final class BetterGitFileStore {
     }
 
     private static void atomicWrite(Path destination, String content) throws IOException {
-        Path temporaryFile = Files.createTempFile(destination.getParent(), destination.getFileName().toString(), ".tmp");
+        Path temporaryFile = temporaryFileFor(destination);
         try {
             Files.writeString(temporaryFile, content, StandardCharsets.UTF_8);
             replaceAtomically(temporaryFile, destination);
         } finally {
             Files.deleteIfExists(temporaryFile);
         }
+    }
+
+    private static Path temporaryFileFor(Path destination) throws IOException {
+        return Files.createTempFile(destination.getParent(), destination.getFileName().toString(), ".tmp");
     }
 
     private static void replaceAtomically(Path source, Path destination) throws IOException {

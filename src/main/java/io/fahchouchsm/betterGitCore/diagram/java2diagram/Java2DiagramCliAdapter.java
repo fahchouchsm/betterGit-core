@@ -1,12 +1,12 @@
-package io.fahchouchsm.betterGitCore.diagram;
+package io.fahchouchsm.betterGitCore.diagram.java2diagram;
+
+import io.fahchouchsm.betterGitCore.diagram.ClassDiagramGenerator;
 
 import java.io.IOException;
 import java.nio.file.Path;
 
-/** Adapter for the separately installed Java2Diagram command-line application. */
-public final class Java2DiagramService implements ClassDiagramService {
-    public static final String PROJECT_URL = "https://github.com/fahchouchsm/Java2Diagram";
-
+/** Runs the separately installed CLI because Java2Diagram has no documented published Maven artifact. */
+public final class Java2DiagramCliAdapter implements ClassDiagramGenerator {
     @Override
     public void generateSvg(Path javaSource, Path outputFile) throws IOException, InterruptedException {
         Process diagramProcess = new ProcessBuilder(

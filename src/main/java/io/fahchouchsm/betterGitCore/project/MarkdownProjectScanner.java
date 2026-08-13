@@ -11,6 +11,7 @@ import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 
 /** Collects bounded Markdown context for project documentation generation. */
@@ -21,16 +22,34 @@ public final class MarkdownProjectScanner {
     private static final Set<String> EXCLUDED_DIRECTORIES = Set.of(
             ".git", ".bettergit", "target", "build", "node_modules", "vendor", ".gradle");
 
-    public String scan(Path projectPath) throws IOException {
+    public MarkdownScanResult scanProject(Path projectPath) throws IOException {
         List<Path> markdownFiles = markdownFiles(projectPath);
         StringBuilder markdownContext = new StringBuilder();
-        for (Path markdownFile : markdownFiles.stream().limit(MAX_FILES).toList()) {
-            appendWithinLimit(markdownContext, projectPath, markdownFile);
+        int includedFiles = 0;
+        int truncatedFiles = 0;
+        int candidateCount = Math.min(markdownFiles.size(), MAX_FILES);
+        for (int index = 0; index < candidateCount; index++) {
+            MarkdownSection section = markdownSection(
+                    projectPath,
+                    markdownFiles.get(index),
+                    MAX_TOTAL_CHARACTERS - markdownContext.length());
+            if (!section.included()) {
+                break;
+            }
+            markdownContext.append(section.markdownText());
+            includedFiles++;
+            if (section.truncated()) {
+                truncatedFiles++;
+            }
             if (markdownContext.length() >= MAX_TOTAL_CHARACTERS) {
                 break;
             }
         }
-        return markdownContext.toString();
+        return new MarkdownScanResult(
+                markdownContext.toString(),
+                includedFiles,
+                markdownFiles.size() - includedFiles,
+                truncatedFiles);
     }
 
     private static List<Path> markdownFiles(Path projectPath) throws IOException {
@@ -40,19 +59,22 @@ public final class MarkdownProjectScanner {
         return markdownFiles;
     }
 
-    private static void appendWithinLimit(StringBuilder context, Path projectPath, Path markdownFile)
+    private static MarkdownSection markdownSection(
+            Path projectPath, Path markdownFile, int remainingCharacters)
             throws IOException {
-        int remainingCharacters = MAX_TOTAL_CHARACTERS - context.length();
-        if (remainingCharacters <= 0) {
-            return;
-        }
         String heading = "\n--- FILE: " + projectPath.relativize(markdownFile) + " ---\n";
         if (remainingCharacters <= heading.length()) {
-            return;
+            return MarkdownSection.NOT_INCLUDED;
         }
-        context.append(heading);
-        int contentLimit = Math.min(MAX_FILE_CHARACTERS, MAX_TOTAL_CHARACTERS - context.length());
-        context.append(readCharacters(markdownFile, contentLimit));
+        int contentLimit = Math.min(MAX_FILE_CHARACTERS, remainingCharacters - heading.length());
+        String content = readCharacters(markdownFile, contentLimit + 1);
+        boolean truncated = content.length() > contentLimit;
+        String boundedContent = truncated ? content.substring(0, contentLimit) : content;
+        return new MarkdownSection(heading + boundedContent, true, truncated);
+    }
+
+    private record MarkdownSection(String markdownText, boolean included, boolean truncated) {
+        private static final MarkdownSection NOT_INCLUDED = new MarkdownSection("", false, false);
     }
 
     private static String readCharacters(Path markdownFile, int characterLimit) throws IOException {
@@ -90,7 +112,8 @@ public final class MarkdownProjectScanner {
 
         @Override
         public FileVisitResult visitFile(Path file, BasicFileAttributes attributes) {
-            if (attributes.isRegularFile() && file.getFileName().toString().toLowerCase().endsWith(".md")) {
+            if (attributes.isRegularFile()
+                    && file.getFileName().toString().toLowerCase(Locale.ROOT).endsWith(".md")) {
                 markdownFiles.add(file);
             }
             return FileVisitResult.CONTINUE;

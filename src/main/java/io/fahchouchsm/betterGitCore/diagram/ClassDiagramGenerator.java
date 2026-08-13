@@ -4,6 +4,6 @@ import java.io.IOException;
 import java.nio.file.Path;
 
 /** Replaceable boundary for BetterGit class-diagram generation. */
-public interface ClassDiagramService {
+public interface ClassDiagramGenerator {
     void generateSvg(Path javaSource, Path outputFile) throws IOException, InterruptedException;
 }
