@@ -1,5 +1,7 @@
 package io.fahchouchsm.betterGitCore.JGitManager;
 
+import io.fahchouchsm.betterGitCore.JGitManager.exceptions.GitInitializationException;
+import io.fahchouchsm.betterGitCore.JGitManager.exceptions.GitNoStagedChangesException;
 import io.fahchouchsm.betterGitCore.JGitManager.exceptions.GitRepositoryNotFoundException;
 import io.fahchouchsm.betterGitCore.JGitManager.exceptions.GitRepositoryPathException;
 import io.fahchouchsm.betterGitCore.JGitManager.exceptions.GitStateReadException;
@@ -11,6 +13,7 @@ import org.eclipse.jgit.dircache.DirCacheIterator;
 import org.eclipse.jgit.diff.DiffFormatter;
 import org.eclipse.jgit.lib.Constants;
 import org.eclipse.jgit.lib.Repository;
+import org.eclipse.jgit.storage.file.FileRepositoryBuilder;
 import org.eclipse.jgit.treewalk.EmptyTreeIterator;
 
 import java.io.ByteArrayOutputStream;
@@ -19,8 +22,26 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
-/** Reads the uncommitted state of an existing local Git repository without modifying it. */
+/** Provides repository detection, initialization, and read-only inspection through JGit. */
 public final class JGitManager {
+
+    /** Detects parent repositories and both directory- and file-based .git metadata. */
+    public boolean isInsideRepository(Path projectPath) {
+        Path repositoryPath = requireDirectory(projectPath);
+        FileRepositoryBuilder repositoryBuilder = new FileRepositoryBuilder();
+        repositoryBuilder.findGitDir(repositoryPath.toFile());
+        return repositoryBuilder.getGitDir() != null;
+    }
+
+    /** Initializes a Git repository in the supplied directory without changing its configuration or contents. */
+    public void initializeRepository(Path projectPath) {
+        Path repositoryPath = requireDirectory(projectPath);
+        try (Git ignored = Git.init().setDirectory(repositoryPath.toFile()).call()) {
+            // Closing the JGit handle releases repository resources; initialization is already complete.
+        } catch (GitAPIException exception) {
+            throw new GitInitializationException("Could not initialize Git in " + repositoryPath, exception);
+        }
+    }
 
     /**
      * Returns changes that would affect the next commit.
@@ -64,6 +85,21 @@ public final class JGitManager {
         } catch (IOException | GitAPIException exception) {
             throw new GitStateReadException("Could not read Git diffs from " + repositoryPath, exception);
         }
+    }
+
+    /**
+     * Returns only the staged patch for the next commit, ready to send to a documentation AI.
+     * Unstaged and untracked changes are deliberately excluded because they are not part of that commit.
+     * Callers must redact sensitive content before sending this patch to an external service.
+     *
+     * @throws GitNoStagedChangesException when no changes are staged
+     */
+    public String getStagedCommitDiff(Path projectPath) {
+        String stagedDiff = getChangeDetailsBeforeCommit(projectPath).stagedDiff();
+        if (stagedDiff.isBlank()) {
+            throw new GitNoStagedChangesException("Stage changes before generating commit documentation.");
+        }
+        return stagedDiff;
     }
 
     private String createStagedDiff(Git git) throws GitAPIException, IOException {

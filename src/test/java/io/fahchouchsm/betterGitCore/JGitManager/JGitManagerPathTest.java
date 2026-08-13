@@ -1,12 +1,10 @@
 package io.fahchouchsm.betterGitCore.JGitManager;
 
+import io.fahchouchsm.betterGitCore.testsupport.TestConfiguration;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 
-import java.io.IOException;
-import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.HashMap;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -14,8 +12,8 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 /** Read-only manual test for checking the repository path configured in .env.test. */
 class JGitManagerPathTest {
     @Test
-    void printsChangesForConfiguredRepositoryPath() throws IOException {
-        Map<String, String> configuration = readTestConfiguration();
+    void printsChangesForConfiguredRepositoryPath() throws Exception {
+        Map<String, String> configuration = TestConfiguration.read();
         String configuredPath = configuration.get("GIT_REPOSITORY_PATH");
         Assumptions.assumeTrue("true".equalsIgnoreCase(configuration.get("RUN_LIVE_TESTS"))
                         && configuredPath != null && !configuredPath.isBlank(),
@@ -32,24 +30,5 @@ class JGitManagerPathTest {
         System.out.println("Untracked: " + changes.untracked());
         System.out.println("Conflicting: " + changes.conflicting());
         assertNotNull(changes);
-    }
-
-    private Map<String, String> readTestConfiguration() throws IOException {
-        Path configurationFile = Path.of(".env.test");
-        if (!Files.isRegularFile(configurationFile)) {
-            return Map.of();
-        }
-        Map<String, String> values = new HashMap<>();
-        for (String line : Files.readAllLines(configurationFile)) {
-            String trimmedLine = line.trim();
-            if (trimmedLine.isEmpty() || trimmedLine.startsWith("#")) {
-                continue;
-            }
-            int separator = trimmedLine.indexOf('=');
-            if (separator > 0) {
-                values.put(trimmedLine.substring(0, separator).trim(), trimmedLine.substring(separator + 1).trim());
-            }
-        }
-        return values;
     }
 }

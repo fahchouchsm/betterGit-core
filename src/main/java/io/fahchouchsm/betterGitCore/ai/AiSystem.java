@@ -35,28 +35,29 @@ public final class AiSystem {
         this.httpClient = HttpClient.newBuilder().connectTimeout(CONNECTION_TIMEOUT).build();
     }
 
-    /** Creates a client from AI_API_KEY, AI_MODEL, and AI_API_URL_TEMPLATE. */
+    /** Creates a client from AI_API_KEY, AI_API_MODEL, and AI_API_URL. */
     public static AiSystem fromEnvironment() {
         return fromConfiguration(System.getenv());
     }
 
-    /** Creates a client from the supplied AI_API_KEY, AI_MODEL, and AI_API_URL_TEMPLATE values. */
+    /** Creates a client from current AI settings, with legacy names accepted for compatibility. */
     public static AiSystem fromConfiguration(Map<String, String> configuration) {
         if (configuration == null) {
             throw new AiConfigurationException("configuration must not be null");
         }
         String apiKey = requireText(configuration.get("AI_API_KEY"), "AI_API_KEY");
-        String model = requireText(configuration.get("AI_MODEL"), "AI_MODEL");
-        String urlTemplate = requireText(configuration.get("AI_API_URL_TEMPLATE"), "AI_API_URL_TEMPLATE");
-        if (!urlTemplate.contains("{model}")) {
-            throw new AiConfigurationException("AI_API_URL_TEMPLATE must contain {model}");
-        }
+        String model = requireText(preferredSetting(configuration, "AI_API_MODEL", "AI_MODEL"), "AI_API_MODEL");
+        String apiUrl = requireText(preferredSetting(configuration, "AI_API_URL", "AI_API_URL_TEMPLATE"), "AI_API_URL");
         String encodedModel = URLEncoder.encode(model, StandardCharsets.UTF_8);
         try {
-            return new AiSystem(apiKey, URI.create(urlTemplate.replace("{model}", encodedModel)));
+            return new AiSystem(apiKey, URI.create(apiUrl.replace("{model}", encodedModel)));
         } catch (IllegalArgumentException exception) {
-            throw new AiConfigurationException("AI_API_URL_TEMPLATE must resolve to a valid HTTP URL", exception);
+            throw new AiConfigurationException("AI_API_URL must resolve to a valid HTTP URL", exception);
         }
+    }
+
+    private static String preferredSetting(Map<String, String> settings, String currentName, String legacyName) {
+        return settings.containsKey(currentName) ? settings.get(currentName) : settings.get(legacyName);
     }
 
     /**
@@ -105,11 +106,11 @@ public final class AiSystem {
         return request.toString();
     }
 
-    private static String requireText(String value, String name) {
-        if (value == null || value.isBlank()) {
+    private static String requireText(String configurationText, String name) {
+        if (configurationText == null || configurationText.isBlank()) {
             throw new AiConfigurationException(name + " must not be blank");
         }
-        return value;
+        return configurationText;
     }
 
     private static String requireInput(String input) {

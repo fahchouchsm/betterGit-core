@@ -1,5 +1,6 @@
 package io.fahchouchsm.betterGitCore.JGitManager;
 
+import io.fahchouchsm.betterGitCore.JGitManager.exceptions.GitNoStagedChangesException;
 import io.fahchouchsm.betterGitCore.JGitManager.exceptions.GitRepositoryNotFoundException;
 import io.fahchouchsm.betterGitCore.JGitManager.exceptions.GitRepositoryPathException;
 import org.eclipse.jgit.api.Git;
@@ -55,6 +56,32 @@ class JGitManagerTest {
     }
 
     @Test
+    void detectsRepositoriesAndGitWorktreeFiles() throws Exception {
+        Path mainRepository = Files.createDirectory(temporaryFolder.resolve("main"));
+        Path linkedWorktree = Files.createDirectory(temporaryFolder.resolve("linked"));
+        try (Git git = Git.init().setDirectory(mainRepository.toFile()).call()) {
+            Files.writeString(linkedWorktree.resolve(".git"),
+                    "gitdir: " + git.getRepository().getDirectory().getAbsolutePath() + "\n");
+
+            assertTrue(manager.isInsideRepository(mainRepository));
+            assertTrue(manager.isInsideRepository(linkedWorktree));
+            assertFalse(manager.isInsideRepository(temporaryFolder));
+        }
+    }
+
+    @Test
+    void initializesRepositoryWithoutCreatingACommit() {
+        manager.initializeRepository(temporaryFolder);
+
+        assertTrue(manager.isInsideRepository(temporaryFolder));
+        try (Git git = Git.open(temporaryFolder.toFile())) {
+            assertTrue(git.getRepository().resolve("HEAD") == null);
+        } catch (Exception exception) {
+            throw new AssertionError(exception);
+        }
+    }
+
+    @Test
     void returnsTheActualStagedAndUnstagedDiffs() throws Exception {
         try (Git git = Git.init().setDirectory(temporaryFolder.toFile()).call()) {
             Path file = temporaryFolder.resolve("notes.txt");
@@ -87,6 +114,29 @@ class JGitManagerTest {
 
             assertTrue(details.stagedDiff().contains("new file mode"));
             assertTrue(details.stagedDiff().contains("+first content"));
+        }
+    }
+
+    @Test
+    void returnsOnlyStagedContentForAiDocumentation() throws Exception {
+        try (Git git = Git.init().setDirectory(temporaryFolder.toFile()).call()) {
+            Path file = temporaryFolder.resolve("notes.txt");
+            Files.writeString(file, "staged version\n");
+            git.add().addFilepattern("notes.txt").call();
+            Files.writeString(file, "unstaged version\n");
+
+            String stagedCommitDiff = manager.getStagedCommitDiff(temporaryFolder);
+
+            assertTrue(stagedCommitDiff.contains("+staged version"));
+            assertFalse(stagedCommitDiff.contains("unstaged version"));
+        }
+    }
+
+    @Test
+    void rejectsDocumentationRequestsWithoutStagedChanges() throws Exception {
+        try (Git ignored = Git.init().setDirectory(temporaryFolder.toFile()).call()) {
+            assertThrows(GitNoStagedChangesException.class,
+                    () -> manager.getStagedCommitDiff(temporaryFolder));
         }
     }
 
