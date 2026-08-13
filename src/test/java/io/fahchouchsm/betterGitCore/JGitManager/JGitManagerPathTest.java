@@ -15,9 +15,11 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 class JGitManagerPathTest {
     @Test
     void printsChangesForConfiguredRepositoryPath() throws IOException {
-        String configuredPath = readTestConfiguration().get("GIT_REPOSITORY_PATH");
-        Assumptions.assumeTrue(configuredPath != null && !configuredPath.isBlank(),
-                "Set GIT_REPOSITORY_PATH in .env.test to run this test.");
+        Map<String, String> configuration = readTestConfiguration();
+        String configuredPath = configuration.get("GIT_REPOSITORY_PATH");
+        Assumptions.assumeTrue("true".equalsIgnoreCase(configuration.get("RUN_LIVE_TESTS"))
+                        && configuredPath != null && !configuredPath.isBlank(),
+                "Set RUN_LIVE_TESTS=true and GIT_REPOSITORY_PATH in .env.test to run this test.");
 
         GitChanges changes = new JGitManager().getChangesBeforeCommit(Path.of(configuredPath));
 

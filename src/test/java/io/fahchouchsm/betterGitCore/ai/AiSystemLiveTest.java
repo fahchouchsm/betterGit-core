@@ -19,8 +19,8 @@ class AiSystemLiveTest {
     @Test
     void sendsInputAndPrintsAiOutput() throws Exception {
         Map<String, String> configuration = readTestConfiguration();
-        Assumptions.assumeTrue(requiredConfigurationIsPresent(configuration),
-                "Add AI_API_KEY, AI_MODEL, AI_API_URL_TEMPLATE, and AI_INPUT to .env.test.");
+        Assumptions.assumeTrue(liveTestsAreEnabled(configuration),
+                "Set RUN_LIVE_TESTS=true and configure the AI values in .env.test to run this test.");
         String input = configuration.get("AI_INPUT");
 
         AiSystem aiSystem = AiSystem.fromConfiguration(configuration);
@@ -30,7 +30,10 @@ class AiSystemLiveTest {
         assertFalse(output.isBlank());
     }
 
-    private boolean requiredConfigurationIsPresent(Map<String, String> configuration) {
+    private boolean liveTestsAreEnabled(Map<String, String> configuration) {
+        if (!"true".equalsIgnoreCase(configuration.get("RUN_LIVE_TESTS"))) {
+            return false;
+        }
         return java.util.stream.Stream.of("AI_API_KEY", "AI_MODEL", "AI_API_URL_TEMPLATE", "AI_INPUT")
                 .map(configuration::get)
                 .allMatch(value -> value != null && !value.isBlank());
