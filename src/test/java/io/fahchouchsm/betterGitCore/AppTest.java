@@ -1,4 +1,4 @@
-package org.example;
+package io.fahchouchsm.betterGitCore;
 
 import junit.framework.Test;
 import junit.framework.TestCase;
