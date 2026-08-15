@@ -4,11 +4,8 @@ import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
 import java.util.List;
 
 /** Writes BetterGit project files without exposing secrets or partially replacing individual files. */
@@ -17,13 +14,12 @@ public final class BetterGitFileStore {
 
     public void writeInitialization(
             Path projectPath, BetterGitConfiguration configuration, String generalDocumentation) throws IOException {
-        Path betterGitDirectory = projectPath.resolve(".bettergit");
-        if (Files.isSymbolicLink(betterGitDirectory)) {
-            throw new IOException("Refusing to write through a symbolic .bettergit directory.");
+        Path betterGitDirectory = BetterGitDirectories.root(projectPath);
+        Path generalFile = betterGitDirectory.resolve("general.md");
+        if (!Files.isRegularFile(generalFile)) {
+            AtomicFileWriter.write(generalFile, generalDocumentation);
         }
-        Files.createDirectories(betterGitDirectory);
-        atomicWrite(betterGitDirectory.resolve("general.md"), generalDocumentation);
-        atomicWrite(
+        AtomicFileWriter.write(
                 betterGitDirectory.resolve("config.json"),
                 JSON.toJson(configuration) + System.lineSeparator());
     }
@@ -36,32 +32,33 @@ public final class BetterGitFileStore {
             return;
         }
         String separator = existingContent.isEmpty() || existingContent.endsWith("\n") ? "" : System.lineSeparator();
-        atomicWrite(gitIgnore, existingContent + separator + ".env" + System.lineSeparator());
+        AtomicFileWriter.write(gitIgnore, existingContent + separator + ".env" + System.lineSeparator());
+    }
+
+    public void ensureReportsIgnored(Path projectPath) throws IOException {
+        Path gitIgnore = projectPath.resolve(".gitignore");
+        String existingContent = Files.isRegularFile(gitIgnore) ? Files.readString(gitIgnore) : "";
+        if (existingContent.lines().map(String::trim).anyMatch(this::definesReportPolicy)) {
+            return;
+        }
+        String separator = existingContent.isEmpty() || existingContent.endsWith("\n")
+                ? ""
+                : System.lineSeparator();
+        AtomicFileWriter.write(gitIgnore,
+                existingContent + separator + ".bettergit/reports/" + System.lineSeparator());
+    }
+
+    public void prepareCommitReports(Path projectPath) throws IOException {
+        BetterGitDirectories.child(projectPath, "reports");
     }
 
     private boolean ignoresEnvFile(String pattern) {
         return ".env".equals(pattern) || "/.env".equals(pattern);
     }
 
-    private static void atomicWrite(Path destination, String content) throws IOException {
-        Path temporaryFile = temporaryFileFor(destination);
-        try {
-            Files.writeString(temporaryFile, content, StandardCharsets.UTF_8);
-            replaceAtomically(temporaryFile, destination);
-        } finally {
-            Files.deleteIfExists(temporaryFile);
-        }
+    private boolean definesReportPolicy(String pattern) {
+        return ".bettergit/reports/".equals(pattern)
+                || pattern.startsWith("!.bettergit/reports/");
     }
 
-    private static Path temporaryFileFor(Path destination) throws IOException {
-        return Files.createTempFile(destination.getParent(), destination.getFileName().toString(), ".tmp");
-    }
-
-    private static void replaceAtomically(Path source, Path destination) throws IOException {
-        try {
-            Files.move(source, destination, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
-        } catch (AtomicMoveNotSupportedException exception) {
-            Files.move(source, destination, StandardCopyOption.REPLACE_EXISTING);
-        }
-    }
 }

@@ -2,6 +2,7 @@ package io.fahchouchsm.betterGitCore.commands;
 
 import io.fahchouchsm.betterGitCore.commands.console.ConsolePort;
 import io.fahchouchsm.betterGitCore.commands.console.ConsoleSettings;
+import io.fahchouchsm.betterGitCore.commands.console.ConfirmationDefault;
 
 import java.io.PrintWriter;
 import java.io.StringWriter;
@@ -28,6 +29,22 @@ final class RecordingConsole implements ConsolePort {
     public String readLine(String prompt) {
         prompts.add(prompt);
         return answers.isEmpty() ? "" : answers.remove();
+    }
+
+    @Override
+    public boolean confirm(String question, ConfirmationDefault defaultChoice) {
+        prompts.add(question);
+        return nextSelection(defaultChoice);
+    }
+
+    @Override
+    public List<Boolean> chooseMany(String question, List<String> choices) {
+        prompts.add(question);
+        List<Boolean> selections = new ArrayList<>(choices.size());
+        for (int index = 0; index < choices.size(); index++) {
+            selections.add(nextSelection(ConfirmationDefault.NO));
+        }
+        return List.copyOf(selections);
     }
 
     @Override
@@ -94,5 +111,16 @@ final class RecordingConsole implements ConsolePort {
 
     boolean noColor() {
         return noColor;
+    }
+
+    private boolean nextSelection(ConfirmationDefault defaultChoice) {
+        if (answers.isEmpty() || answers.peek().isBlank()) {
+            if (!answers.isEmpty()) {
+                answers.remove();
+            }
+            return defaultChoice == ConfirmationDefault.YES;
+        }
+        String answer = answers.remove();
+        return "y".equalsIgnoreCase(answer) || "yes".equalsIgnoreCase(answer);
     }
 }

@@ -6,7 +6,10 @@ import io.fahchouchsm.betterGitCore.commands.init.BetterGitInitializer;
 import io.fahchouchsm.betterGitCore.commands.init.InitConfiguration;
 import io.fahchouchsm.betterGitCore.commands.init.InitializationDependencies;
 import io.fahchouchsm.betterGitCore.commands.init.InitializationMode;
+import io.fahchouchsm.betterGitCore.commitreport.AiMemoryStore;
+import io.fahchouchsm.betterGitCore.commitreport.ProjectMapScanner;
 import io.fahchouchsm.betterGitCore.configuration.AiConfigurationLoader;
+import io.fahchouchsm.betterGitCore.configuration.BetterGitConfigurationLoader;
 import io.fahchouchsm.betterGitCore.configuration.BetterGitFileStore;
 import io.fahchouchsm.betterGitCore.documentation.AiTextGenerator;
 import io.fahchouchsm.betterGitCore.documentation.ProjectDocumentationGenerator;
@@ -22,6 +25,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.Arrays;
+import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
 
@@ -90,15 +94,29 @@ class InitCommandTest {
     }
 
     @Test
-    void nonJavaProjectUsesLimitedModeWithoutQuestions() throws Exception {
+    void nonJavaProjectAsksBeforeUsingLimitedMode() throws Exception {
         RecordingConsole console = new RecordingConsole();
 
         initialize(new RecordingRepositoryAccess(true), console, Map.of(), successfulAi(), false);
 
         assertTrue(console.output().contains("limited mode"));
         assertTrue(console.output().contains("Java code analysis during commits"));
-        assertTrue(console.prompts().isEmpty());
+        assertEquals(List.of(
+                "Continue with BetterGit limited mode?",
+                "Enable AI commit report generator?"), console.prompts());
         assertFalse(configuration().get("javaDetected").getAsBoolean());
+    }
+
+    @Test
+    void cancellingLimitedModeDoesNotWriteProjectFiles() throws Exception {
+        RecordingConsole console = new RecordingConsole("n");
+        RecordingRepositoryAccess repository = new RecordingRepositoryAccess(false);
+
+        initialize(repository, console, Map.of(), successfulAi(), false);
+
+        assertFalse(Files.exists(projectPath.resolve(".bettergit")));
+        assertEquals(0, repository.initializationCount);
+        assertTrue(console.output().contains("initialization cancelled"));
     }
 
     @Test
@@ -134,6 +152,37 @@ class InitCommandTest {
         assertFalse(settings.get("classDiagramOnCommit").getAsBoolean());
         assertFalse(settings.get("testDurationTracking").getAsBoolean());
         assertFalse(settings.get("sonarQubeDocumentation").getAsBoolean());
+        assertFalse(configuration().getAsJsonObject("ai").get("commitReportEnabled").getAsBoolean());
+    }
+
+    @Test
+    void configuresAiCommitReportsWithoutPersistingASecret() throws Exception {
+        RecordingConsole console = new RecordingConsole("y", "y", "selected-model", "yes");
+
+        initialize(new RecordingRepositoryAccess(true), console, Map.of(), successfulAi(), false);
+
+        JsonObject ai = configuration().getAsJsonObject("ai");
+        assertTrue(ai.get("commitReportEnabled").getAsBoolean());
+        assertTrue(ai.get("memoryEnabled").getAsBoolean());
+        assertEquals("selected-model", ai.get("model").getAsString());
+        assertFalse(Files.readString(projectPath.resolve(".bettergit/config.json")).contains("AI_API_KEY"));
+        assertTrue(console.output().contains("reports will be skipped until it is supplied"));
+        assertTrue(Files.isRegularFile(projectPath.resolve(".bettergit/context/project-map.json")));
+        assertTrue(Files.isRegularFile(projectPath.resolve(".bettergit/context/recent-history.md")));
+        assertTrue(Files.isDirectory(projectPath.resolve(".bettergit/reports")));
+        assertTrue(Files.readString(projectPath.resolve(".gitignore")).contains(".bettergit/reports/"));
+    }
+
+    @Test
+    void existingAiModelSkipsTheModelQuestion() throws Exception {
+        RecordingConsole console = new RecordingConsole("y", "y", "n");
+        Map<String, String> environment = Map.of("AI_API_MODEL", "configured-model");
+
+        initialize(new RecordingRepositoryAccess(true), console, environment, successfulAi(), false);
+
+        JsonObject ai = configuration().getAsJsonObject("ai");
+        assertEquals("configured-model", ai.get("model").getAsString());
+        assertFalse(console.prompts().stream().anyMatch(prompt -> prompt.startsWith("AI model")));
     }
 
     @Test
@@ -208,15 +257,16 @@ class InitCommandTest {
     }
 
     @Test
-    void invalidInteractiveAnswersAreRejectedAndAskedAgain() throws Exception {
+    void interactiveFeatureSelectionsArePersisted() throws Exception {
         createJavaProject();
-        RecordingConsole console = new RecordingConsole("maybe", "y", "later", "", "YES");
+        RecordingConsole console = new RecordingConsole("y", "n", "YES");
 
         initialize(new RecordingRepositoryAccess(true), console, Map.of(), successfulAi(), false);
 
         JsonObject settings = configuration().getAsJsonObject("settings");
-        assertEquals(5, console.prompts().size());
-        assertTrue(console.output().contains("Please answer y, yes, n, or no"));
+        assertEquals(List.of(
+                "Select the Java features to enable",
+                "Enable AI commit report generator?"), console.prompts());
         assertTrue(settings.get("classDiagramOnCommit").getAsBoolean());
         assertFalse(settings.get("testDurationTracking").getAsBoolean());
         assertTrue(settings.get("sonarQubeDocumentation").getAsBoolean());
@@ -244,10 +294,12 @@ class InitCommandTest {
                 repository,
                 console,
                 new AiConfigurationLoader(),
+                new BetterGitConfigurationLoader(),
                 new JavaProjectDetector(),
                 new MarkdownProjectScanner(),
                 new ProjectDocumentationGenerator(aiTextGenerator),
                 new BetterGitFileStore(),
+                new AiMemoryStore(new ProjectMapScanner()),
                 environment,
                 Clock.fixed(Instant.parse("2026-08-13T12:00:00Z"), ZoneOffset.UTC)));
         initializer.initialize(new InitConfiguration(

@@ -6,7 +6,19 @@ import io.fahchouchsm.betterGitCore.commands.console.ConsoleSettings;
 import io.fahchouchsm.betterGitCore.commands.console.SystemConsoleAdapter;
 import io.fahchouchsm.betterGitCore.commands.init.BetterGitInitializer;
 import io.fahchouchsm.betterGitCore.commands.init.InitializationDependencies;
+import io.fahchouchsm.betterGitCore.commitreport.AiCommitContextBuilder;
+import io.fahchouchsm.betterGitCore.commitreport.AiCommitPromptBuilder;
+import io.fahchouchsm.betterGitCore.commitreport.AiCommitReportGenerator;
+import io.fahchouchsm.betterGitCore.commitreport.AiMemoryStore;
+import io.fahchouchsm.betterGitCore.commitreport.CommitReportDependencies;
+import io.fahchouchsm.betterGitCore.commitreport.CommitReportStore;
+import io.fahchouchsm.betterGitCore.commitreport.CommitReportValidator;
+import io.fahchouchsm.betterGitCore.commitreport.JGitCommitDataSource;
+import io.fahchouchsm.betterGitCore.commitreport.JavaSourceContextCollector;
+import io.fahchouchsm.betterGitCore.commitreport.ProjectMapScanner;
+import io.fahchouchsm.betterGitCore.commitreport.SensitiveContentFilter;
 import io.fahchouchsm.betterGitCore.configuration.AiConfigurationLoader;
+import io.fahchouchsm.betterGitCore.configuration.BetterGitConfigurationLoader;
 import io.fahchouchsm.betterGitCore.configuration.BetterGitFileStore;
 import io.fahchouchsm.betterGitCore.documentation.AiSystemTextGenerator;
 import io.fahchouchsm.betterGitCore.documentation.ProjectDocumentationGenerator;
@@ -28,10 +40,12 @@ public final class CommandRunner {
 
     public static void main(String[] arguments) {
         ConsolePort console = new SystemConsoleAdapter();
+        JGitManager git = new JGitManager();
         CommandRuntime runtime = new CommandRuntime(
                 Path.of("").toAbsolutePath().normalize(),
                 console,
-                new JGitRepositoryAccess(new JGitManager()),
+                new JGitRepositoryAccess(git),
+                new JGitCommitDataSource(git),
                 System.getenv(),
                 Clock.systemUTC(),
                 new AiSystemTextGenerator());
@@ -47,24 +61,54 @@ public final class CommandRunner {
 
     private static CommandLine createCommandLine(CommandRuntime runtime) {
         ConsolePort console = runtime.console();
-        BetterGitInitializer initializer = new BetterGitInitializer(new InitializationDependencies(
-                runtime.repositoryAccess(),
-                console,
-                new AiConfigurationLoader(),
-                new JavaProjectDetector(),
-                new MarkdownProjectScanner(),
-                new ProjectDocumentationGenerator(runtime.aiTextGenerator()),
-                new BetterGitFileStore(),
-                runtime.environment(),
-                runtime.clock()));
+        AiMemoryStore memoryStore = new AiMemoryStore(new ProjectMapScanner());
+        BetterGitConfigurationLoader configurationLoader = new BetterGitConfigurationLoader();
+        BetterGitInitializer initializer = initializer(runtime, memoryStore, configurationLoader);
+        AiCommitReportGenerator reportGenerator = reportGenerator(runtime, memoryStore);
+        CommitReportCommandDependencies reportDependencies = new CommitReportCommandDependencies(
+                reportGenerator, configurationLoader, new AiConfigurationLoader(), new BetterGitFileStore(),
+                console, runtime.environment());
         BetterGitCommand rootCommand = new BetterGitCommand();
         CommandLine commandLine = new CommandLine(rootCommand);
         commandLine.addSubcommand("init", new InitCommand(initializer, console, runtime.projectPath()));
+        commandLine.addSubcommand("commit-report", new CommitReportCommand(reportDependencies, runtime.projectPath()));
         commandLine.addSubcommand("help", new CommandLine.HelpCommand());
         commandLine.setOut(console.out());
         commandLine.setErr(console.err());
         installHandlers(commandLine, console, rootCommand);
         return commandLine;
+    }
+
+    private static BetterGitInitializer initializer(
+            CommandRuntime runtime,
+            AiMemoryStore memoryStore,
+            BetterGitConfigurationLoader configurationLoader) {
+        return new BetterGitInitializer(new InitializationDependencies(
+                runtime.repositoryAccess(),
+                runtime.console(),
+                new AiConfigurationLoader(),
+                configurationLoader,
+                new JavaProjectDetector(),
+                new MarkdownProjectScanner(),
+                new ProjectDocumentationGenerator(runtime.aiTextGenerator()),
+                new BetterGitFileStore(),
+                memoryStore,
+                runtime.environment(),
+                runtime.clock()));
+    }
+
+    private static AiCommitReportGenerator reportGenerator(CommandRuntime runtime, AiMemoryStore memoryStore) {
+        SensitiveContentFilter filter = new SensitiveContentFilter();
+        return new AiCommitReportGenerator(new CommitReportDependencies(
+                runtime.commitDataSource(),
+                runtime.aiTextGenerator(),
+                memoryStore,
+                new AiCommitContextBuilder(filter, new JavaSourceContextCollector()),
+                new AiCommitPromptBuilder(),
+                filter,
+                new CommitReportValidator(),
+                new CommitReportStore(),
+                runtime.clock()));
     }
 
     private static void installHandlers(
@@ -97,7 +141,7 @@ public final class CommandRunner {
             BetterGitCommand rootCommand) {
         configureOutput(commandLine, console, rootCommand);
         Throwable cause = exception.getCause() == null ? exception : exception.getCause();
-        console.failure("BetterGit initialization failed.");
+        console.failure("BetterGit command failed.");
         if (console.isVerbose()) {
             printSecretSafeStackTrace(cause, console);
         } else {

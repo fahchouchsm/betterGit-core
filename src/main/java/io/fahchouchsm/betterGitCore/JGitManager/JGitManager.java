@@ -102,6 +102,17 @@ public final class JGitManager {
         return stagedDiff;
     }
 
+    public String getCurrentBranch(Path projectPath) {
+        Path repositoryPath = requireDirectory(projectPath);
+        try (Git git = Git.open(repositoryPath.toFile())) {
+            return git.getRepository().getBranch();
+        } catch (RepositoryNotFoundException exception) {
+            throw new GitRepositoryNotFoundException("Not a Git repository: " + repositoryPath, exception);
+        } catch (IOException exception) {
+            throw new GitStateReadException("Could not read the current Git branch from " + repositoryPath, exception);
+        }
+    }
+
     private String createStagedDiff(Git git) throws GitAPIException, IOException {
         try (ByteArrayOutputStream output = new ByteArrayOutputStream()) {
             Repository repository = git.getRepository();

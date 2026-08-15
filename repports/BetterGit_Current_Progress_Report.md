@@ -8,15 +8,15 @@
 
 ## Project status
 
-BetterGit has a working Java 21 and Maven CLI foundation built with Picocli. The first command, `bettergit init`, is implemented and can initialize BetterGit in the current working directory. The initialization workflow is separated from terminal, Git, AI, configuration, project-scanning, and documentation concerns so that future commands can reuse the same components.
+BetterGit has a working Java 21 and Maven CLI foundation built with Picocli. `bettergit init [DIRECTORY]` configures a target project through a modern interactive menu, and `bettergit commit-report [DIRECTORY]` creates an opt-in AI report from staged changes. The workflows separate terminal, Git, AI, configuration, memory, project-scanning, and persistence concerns.
 
 ## Completed functionality
 
 ### CLI foundation
 
 - Root `bettergit` command with professional help output.
-- Standard `--help` and `--version` options.
-- Global `--no-color` and `--verbose` options.
+- Standard `-h`/`--help` and `-V`/`--version` options.
+- Global `-C`/`--no-color` and `-v`/`--verbose` options.
 - Helpful errors and non-zero exit codes for invalid commands.
 - Stack traces hidden by default and available in verbose mode with secret redaction.
 - Executable shaded JAR with `CommandRunner` as the main class.
@@ -24,7 +24,7 @@ BetterGit has a working Java 21 and Maven CLI foundation built with Picocli. The
 ### `bettergit init`
 
 - Initializes the current working directory.
-- Supports interactive setup and `--yes` safe defaults.
+- Supports interactive setup and `-y`/`--yes` safe defaults.
 - Detects existing Git repositories before changing project files.
 - Initializes Git only after BetterGit setup files are written successfully.
 - Detects Java projects using Maven, Gradle, and Java source paths.
@@ -34,6 +34,15 @@ BetterGit has a working Java 21 and Maven CLI foundation built with Picocli. The
 - Creates `.bettergit/general.md` with AI-generated documentation or a safe placeholder.
 - Preserves existing `.gitignore` content when adding `.env` for a new repository.
 - Uses atomic file replacement and rejects symbolic `.bettergit` directories.
+- Accepts an optional target directory and offers full-screen JLine menus in an interactive terminal.
+
+### AI commit reports
+
+- Configures opt-in report generation and local memory during `bettergit init`.
+- Generates professional Markdown reports from staged changes through `bettergit commit-report`.
+- Maintains compact project maps and a maximum of 10 recent summaries.
+- Filters sensitive files and redacts secrets across every AI prompt input and generated report.
+- Bounds AI input and safely skips provider errors or incomplete configuration.
 
 ### AI and documentation
 
@@ -62,7 +71,7 @@ mvn -q test
 
 Result:
 
-- 46 deterministic tests passed.
+- 65 deterministic tests passed.
 - 0 failures.
 - 0 errors.
 - 0 skipped tests in the current source suite.
@@ -97,9 +106,9 @@ The absolute target directory is stored as `projectPath` in `.bettergit/config.j
 
 ## Current limitations
 
-- `bettergit init` operates on the current working directory; it does not yet accept a `--path` option.
 - Class-diagram generation is prepared but not connected to commit workflows.
 - Test-duration tracking and SonarQube documentation are configuration flags only.
+- There is no `bettergit commit` command or post-commit lifecycle, so commit reports use a `pending-<timestamp>.md` filename rather than a final commit hash.
 - Commands such as `status`, `commit`, `diagram`, `test-report`, and `config` are not implemented yet.
 - There is no installer or global `bettergit` launcher yet; the shaded JAR is run directly.
 
@@ -121,9 +130,7 @@ Review counts: 0 critical, 2 important, 2 nits.
 
 ## Recommended next steps
 
-1. Add an optional `bettergit init --path <directory>` argument while keeping the current directory as the default.
-2. Add a global installation script or launcher so users can invoke `bettergit` directly.
-3. Implement configuration reading and a `bettergit config` command.
-4. Implement the first feature that consumes saved settings, preferably `bettergit diagram`.
-5. Remove the unrelated `.metrolist_import.py` file from the BetterGit repository in a cleanup commit.
-6. Commit the test cleanup and this report after review.
+1. Add a global installation script or launcher so users can invoke `bettergit` directly.
+2. Implement a `bettergit commit` lifecycle that can finalize pending report filenames with the resulting commit hash.
+3. Add a `bettergit config` command for changing stored non-secret settings without rerunning initialization.
+4. Connect class-diagram and test-duration settings to commit workflows.
