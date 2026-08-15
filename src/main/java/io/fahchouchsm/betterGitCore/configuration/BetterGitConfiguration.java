@@ -8,7 +8,19 @@ public record BetterGitConfiguration(
         boolean javaDetected,
         boolean gitAlreadyExisted,
         FeatureSettings settings,
-        boolean aiDocumentationAvailable) {
+        boolean aiDocumentationAvailable,
+        AiCommitSettings ai) {
 
-    public static final int CURRENT_SCHEMA_VERSION = 1;
+    public static final int CURRENT_SCHEMA_VERSION = 2;
+
+    public BetterGitConfiguration {
+        settings = settings == null ? FeatureSettings.disabled() : settings;
+        ai = ai == null ? AiCommitSettings.disabled(null) : ai;
+    }
+
+    public BetterGitConfiguration withAiModel(String model) {
+        return new BetterGitConfiguration(
+                schemaVersion, createdAt, projectPath, javaDetected, gitAlreadyExisted, settings,
+                aiDocumentationAvailable, new AiCommitSettings(ai.commitReportEnabled(), ai.memoryEnabled(), model));
+    }
 }

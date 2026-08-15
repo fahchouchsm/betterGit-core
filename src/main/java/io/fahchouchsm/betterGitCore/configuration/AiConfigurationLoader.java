@@ -8,16 +8,27 @@ import java.util.Map;
 
 /** Loads supported AI settings with environment variables taking precedence over project .env values. */
 public final class AiConfigurationLoader {
-    private static final String API_KEY = "AI_API_KEY";
-    private static final String API_MODEL = "AI_API_MODEL";
-    private static final String API_URL = "AI_API_URL";
+    static final String API_KEY = "AI_API_KEY";
+    static final String API_MODEL = "AI_API_MODEL";
+    static final String API_URL = "AI_API_URL";
 
     public AiConfiguration load(Path projectPath, Map<String, String> environment) throws IOException {
+        return load(projectPath, environment, null);
+    }
+
+    public AiConfiguration load(
+            Path projectPath, Map<String, String> environment, String configuredModel) throws IOException {
         Map<String, String> fileSettings = readEnvFile(projectPath.resolve(".env"));
         return new AiConfiguration(
                 preferredValue(API_KEY, environment, fileSettings),
-                preferredValue(API_MODEL, environment, fileSettings),
+                preferredModel(environment, fileSettings, configuredModel),
                 preferredValue(API_URL, environment, fileSettings));
+    }
+
+    private static String preferredModel(
+            Map<String, String> environment, Map<String, String> fileSettings, String configuredModel) {
+        String configuredValue = preferredValue(API_MODEL, environment, fileSettings);
+        return configuredValue == null || configuredValue.isBlank() ? configuredModel : configuredValue;
     }
 
     private static String preferredValue(

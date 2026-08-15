@@ -23,13 +23,13 @@ public final class BetterGitCommand implements Runnable {
     private CommandSpec commandSpec;
 
     @Option(
-            names = "--no-color",
+            names = {"-C", "--no-color"},
             description = "Disable coloured terminal output.",
             scope = ScopeType.INHERIT)
     private boolean noColor;
 
     @Option(
-            names = "--verbose",
+            names = {"-v", "--verbose"},
             description = "Show technical diagnostic information.",
             scope = ScopeType.INHERIT)
     private boolean verbose;

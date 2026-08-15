@@ -1,6 +1,8 @@
 package io.fahchouchsm.betterGitCore.commands.init;
 
 import io.fahchouchsm.betterGitCore.commands.console.ConsolePort;
+import io.fahchouchsm.betterGitCore.commands.console.ConfirmationDefault;
+import io.fahchouchsm.betterGitCore.configuration.AiCommitSettings;
 import io.fahchouchsm.betterGitCore.configuration.AiConfiguration;
 import io.fahchouchsm.betterGitCore.configuration.BetterGitConfiguration;
 import io.fahchouchsm.betterGitCore.configuration.FeatureSettings;
@@ -12,7 +14,8 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
-import java.util.Locale;
+import java.util.List;
+import java.util.Optional;
 
 /** Coordinates BetterGit setup without implementing Git or AI provider logic. */
 public final class BetterGitInitializer {
@@ -25,35 +28,60 @@ public final class BetterGitInitializer {
     public void initialize(InitConfiguration request) throws IOException {
         Path projectPath = request.projectPath().toAbsolutePath().normalize();
         ConsolePort console = dependencies.console();
-        GitPresence gitPresence = dependencies.repositoryAccess().isInsideRepository(projectPath)
-                ? GitPresence.EXISTING
-                : GitPresence.MISSING;
+        GitPresence gitPresence = gitPresence(projectPath);
         reportGitDetection(console, gitPresence);
-        SetupPlan setup = collectSetup(projectPath, request.mode(), gitPresence);
+        ProjectMode projectMode = projectMode(projectPath);
+        reportJavaSupport(console, projectMode);
+        if (!continueInitialization(console, request.mode(), projectMode)) {
+            console.warning("BetterGit initialization cancelled. No files were changed.");
+            return;
+        }
+        SetupPlan setup = collectSetup(projectPath, request.mode(), gitPresence, projectMode);
         persistSetup(projectPath, setup);
         initializeGitLast(projectPath, gitPresence, console);
         printSummary(console, setup);
     }
 
-    private SetupPlan collectSetup(
-            Path projectPath, InitializationMode mode, GitPresence gitPresence) throws IOException {
-        ConsolePort console = dependencies.console();
-        AiConfiguration aiConfiguration = dependencies.aiConfigurationLoader()
-                .load(projectPath, dependencies.environment());
-        reportAiAvailability(console, aiConfiguration);
-        ProjectMode projectMode = dependencies.javaProjectDetector().isJavaProject(projectPath)
+    private GitPresence gitPresence(Path projectPath) {
+        return dependencies.repositoryAccess().isInsideRepository(projectPath)
+                ? GitPresence.EXISTING
+                : GitPresence.MISSING;
+    }
+
+    private ProjectMode projectMode(Path projectPath) {
+        return dependencies.javaProjectDetector().isJavaProject(projectPath)
                 ? ProjectMode.JAVA
                 : ProjectMode.LIMITED;
-        reportJavaSupport(console, projectMode);
+    }
+
+    private SetupPlan collectSetup(
+            Path projectPath,
+            InitializationMode mode,
+            GitPresence gitPresence,
+            ProjectMode projectMode) throws IOException {
+        ConsolePort console = dependencies.console();
+        AiConfiguration loadedAiConfiguration = loadAiConfiguration(projectPath);
         FeatureSettings settings = projectMode == ProjectMode.JAVA
                 ? collectJavaSettings(console, mode)
                 : FeatureSettings.disabled();
+        AiSetup aiSetup = collectAiSetup(projectPath, console, mode, loadedAiConfiguration);
+        AiConfiguration aiConfiguration = aiSetup.configuration();
+        reportAiAvailability(console, aiConfiguration);
         DocumentationResult documentation = generateDocumentation(projectPath, aiConfiguration);
         Instant createdAt = dependencies.clock().instant();
-        ProjectFacts facts = new ProjectFacts(
-                projectMode, gitPresence, settings, aiConfiguration.isComplete());
+        ProjectFacts facts = new ProjectFacts(projectMode, gitPresence, settings,
+                aiConfiguration.isComplete(), aiSetup.commitSettings());
         BetterGitConfiguration configuration = createConfiguration(projectPath, facts, createdAt);
         return new SetupPlan(configuration, documentation, projectMode, gitPresence);
+    }
+
+    private AiConfiguration loadAiConfiguration(Path projectPath) throws IOException {
+        Optional<BetterGitConfiguration> existing = dependencies.configurationLoader().load(projectPath);
+        String configuredModel = existing.map(BetterGitConfiguration::ai)
+                .map(AiCommitSettings::model)
+                .orElse(null);
+        return dependencies.aiConfigurationLoader()
+                .load(projectPath, dependencies.environment(), configuredModel);
     }
 
     private DocumentationResult generateDocumentation(Path projectPath, AiConfiguration aiConfiguration)
@@ -72,9 +100,21 @@ public final class BetterGitInitializer {
         dependencies.fileStore().writeInitialization(
                 projectPath, setup.configuration(), setup.documentation().content());
         console.diagnostic("Wrote .bettergit/config.json and .bettergit/general.md.");
-        if (!setup.configuration().gitAlreadyExisted() && Files.isRegularFile(projectPath.resolve(".env"))) {
+        prepareCommitReports(projectPath, setup.configuration().ai());
+        if (Files.isRegularFile(projectPath.resolve(".env"))) {
             dependencies.fileStore().ensureEnvIgnored(projectPath);
             console.diagnostic("Ensured the project .env file is ignored by Git.");
+        }
+    }
+
+    private void prepareCommitReports(Path projectPath, AiCommitSettings settings) throws IOException {
+        if (!settings.commitReportEnabled()) {
+            return;
+        }
+        dependencies.fileStore().prepareCommitReports(projectPath);
+        dependencies.fileStore().ensureReportsIgnored(projectPath);
+        if (settings.memoryEnabled()) {
+            dependencies.memoryStore().initialize(projectPath);
         }
     }
 
@@ -122,23 +162,54 @@ public final class BetterGitInitializer {
             console.diagnostic("Using safe defaults for all optional Java features.");
             return FeatureSettings.disabled();
         }
-        return new FeatureSettings(
-                askYesNo(console, "Save a class diagram on each commit? [y/N]: "),
-                askYesNo(console, "Track test duration on each commit? [y/N]: "),
-                askYesNo(console, "Generate SonarQube documentation? [y/N]: "));
+        List<Boolean> selections = console.chooseMany(
+                "Select the Java features to enable",
+                List.of(
+                        "Save a class diagram on each commit",
+                        "Track test duration on each commit",
+                        "Generate SonarQube documentation"));
+        return new FeatureSettings(selections.get(0), selections.get(1), selections.get(2));
     }
 
-    private static boolean askYesNo(ConsolePort console, String prompt) throws IOException {
-        while (true) {
-            String answer = console.readLine(prompt).trim().toLowerCase(Locale.ROOT);
-            if (answer.isEmpty() || "n".equals(answer) || "no".equals(answer)) {
-                return false;
-            }
-            if ("y".equals(answer) || "yes".equals(answer)) {
-                return true;
-            }
-            console.warning("Please answer y, yes, n, or no. Press Enter for no.");
+    private AiSetup collectAiSetup(
+            Path projectPath,
+            ConsolePort console,
+            InitializationMode mode,
+            AiConfiguration configuration) throws IOException {
+        if (mode == InitializationMode.SAFE_DEFAULTS) {
+            return new AiSetup(configuration, AiCommitSettings.disabled(configuration.model()));
         }
+        boolean enabled = console.confirm(
+                "Enable AI commit report generator?", ConfirmationDefault.NO);
+        if (!enabled) {
+            return new AiSetup(configuration, AiCommitSettings.disabled(configuration.model()));
+        }
+        AiConfiguration completedConfiguration = dependencies.aiSetupService()
+                .complete(projectPath, configuration, console);
+        String model = configuredModel(console, completedConfiguration.model());
+        boolean memoryEnabled = console.confirm(
+                "Maintain local BetterGit AI memory/context?", ConfirmationDefault.YES);
+        return new AiSetup(
+                new AiConfiguration(
+                        completedConfiguration.apiKey(), model, completedConfiguration.apiUrl()),
+                new AiCommitSettings(true, memoryEnabled, model));
+    }
+
+    private static String configuredModel(ConsolePort console, String currentModel) throws IOException {
+        if (currentModel != null && !currentModel.isBlank()) {
+            return currentModel;
+        }
+        String selectedModel = console.readLine(
+                "AI model (leave blank to configure AI_API_MODEL later): ").trim();
+        return selectedModel.isBlank() ? null : selectedModel;
+    }
+
+    private static boolean continueInitialization(
+            ConsolePort console, InitializationMode mode, ProjectMode projectMode) throws IOException {
+        if (mode == InitializationMode.SAFE_DEFAULTS || projectMode == ProjectMode.JAVA) {
+            return true;
+        }
+        return console.confirm("Continue with BetterGit limited mode?", ConfirmationDefault.YES);
     }
 
     private static void reportMarkdownScan(ConsolePort console, MarkdownScanResult scan) {
@@ -173,7 +244,8 @@ public final class BetterGitInitializer {
                 facts.projectMode() == ProjectMode.JAVA,
                 facts.gitPresence() == GitPresence.EXISTING,
                 facts.settings(),
-                facts.aiDocumentationAvailable());
+                facts.aiDocumentationAvailable(),
+                facts.aiCommitSettings());
     }
 
     private static void printSummary(ConsolePort console, SetupPlan setup) {
@@ -190,6 +262,8 @@ public final class BetterGitInitializer {
                 Class diagrams: %s
                 Test duration tracking: %s
                 SonarQube documentation: %s
+                AI commit reports: %s
+                AI memory/context: %s
                 General documentation: %s
 
                 Next step:
@@ -199,6 +273,8 @@ public final class BetterGitInitializer {
                 enabled(settings.classDiagramOnCommit()),
                 enabled(settings.testDurationTracking()),
                 enabled(settings.sonarQubeDocumentation()),
+                enabled(setup.configuration().ai().commitReportEnabled()),
+                enabled(setup.configuration().ai().memoryEnabled()),
                 setup.documentation().status() == DocumentationStatus.GENERATED
                         ? "generated"
                         : "placeholder created");
@@ -219,7 +295,11 @@ public final class BetterGitInitializer {
             ProjectMode projectMode,
             GitPresence gitPresence,
             FeatureSettings settings,
-            boolean aiDocumentationAvailable) {
+            boolean aiDocumentationAvailable,
+            AiCommitSettings aiCommitSettings) {
+    }
+
+    private record AiSetup(AiConfiguration configuration, AiCommitSettings commitSettings) {
     }
 
     private enum ProjectMode {
