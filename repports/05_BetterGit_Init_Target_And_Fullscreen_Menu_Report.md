@@ -1,4 +1,4 @@
-# BetterGit Init Target and Full-Screen Menu Report
+# 05 — BetterGit Init Target and Full-Screen Menu Report
 
 **Report date:** 2026-08-15
 

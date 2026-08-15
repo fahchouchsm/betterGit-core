@@ -1,4 +1,4 @@
-# BetterGit Init Path Argument Report
+# 04 — BetterGit Init Path Argument Report
 
 **Report date:** 2026-08-15
 
@@ -37,4 +37,4 @@ The equivalent one-line command is:
 
 ## Resolution
 
-The optional positional directory was implemented after this diagnosis. The rebuilt JAR now supports both `init` for the current directory and `init <directory>` for a specified existing directory. See `BetterGit_Init_Target_And_Fullscreen_Menu_Report.md` for the implementation and verification results.
+The optional positional directory was implemented after this diagnosis. The rebuilt JAR now supports both `init` for the current directory and `init <directory>` for a specified existing directory. See `05_BetterGit_Init_Target_And_Fullscreen_Menu_Report.md` for the implementation and verification results.

@@ -1,4 +1,4 @@
-# BetterGit JAR Invocation Report
+# 02 — BetterGit JAR Invocation Report
 
 **Report date:** 2026-08-15
 

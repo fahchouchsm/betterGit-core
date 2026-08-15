@@ -1,4 +1,4 @@
-# BetterGit Interactive Init Menu Report
+# 03 — BetterGit Interactive Init Menu Report
 
 **Report date:** 2026-08-15
 

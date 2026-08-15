@@ -1,4 +1,4 @@
-# BetterGit AI Commit Report Generator Report
+# 06 — BetterGit AI Commit Report Generator Report
 
 **Report date:** 2026-08-15
 

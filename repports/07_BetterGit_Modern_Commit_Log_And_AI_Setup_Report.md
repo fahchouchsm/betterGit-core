@@ -1,4 +1,4 @@
-# BetterGit Modern Commit, Log, and AI Setup Report
+# 07 — BetterGit Modern Commit, Log, and AI Setup Report
 
 **Report date:** 2026-08-15
 

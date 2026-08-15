@@ -1,4 +1,4 @@
-# BetterGit Current Progress Report
+# 01 — BetterGit Current Progress Report
 
 **Report date:** 2026-08-15
 
