@@ -14,6 +14,7 @@ public record CommandRuntime(
         ConsolePort console,
         RepositoryAccess repositoryAccess,
         CommitDataSource commitDataSource,
+        CommitExecutor commitExecutor,
         Map<String, String> environment,
         Clock clock,
         AiTextGenerator aiTextGenerator) {

@@ -8,6 +8,8 @@ import java.util.List;
 public interface ConsolePort {
     String readLine(String prompt) throws IOException;
 
+    String readSecret(String prompt) throws IOException;
+
     boolean confirm(String question, ConfirmationDefault defaultChoice) throws IOException;
 
     List<Boolean> chooseMany(String question, List<String> choices) throws IOException;

@@ -6,6 +6,8 @@ import io.fahchouchsm.betterGitCore.configuration.BetterGitDirectories;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.AtomicMoveNotSupportedException;
+import java.nio.file.StandardCopyOption;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
@@ -22,6 +24,23 @@ public final class CommitReportStore {
         return report;
     }
 
+    public Path finalizePending(Path projectPath, Path pendingReport, String commitHash) throws IOException {
+        if (!commitHash.matches("[0-9a-f]{40}")) {
+            throw new IllegalArgumentException("Commit hash must contain 40 lowercase hexadecimal characters.");
+        }
+        Path reportsDirectory = BetterGitDirectories.child(projectPath, "reports").toAbsolutePath().normalize();
+        Path source = pendingReport.toAbsolutePath().normalize();
+        if (!source.getParent().equals(reportsDirectory) || !Files.isRegularFile(source)) {
+            throw new IOException("Pending report is not a regular BetterGit report file.");
+        }
+        Path finalizedReport = reportsDirectory.resolve(commitHash + ".md");
+        if (Files.exists(finalizedReport)) {
+            throw new IOException("A report already exists for commit " + commitHash + ".");
+        }
+        move(source, finalizedReport);
+        return finalizedReport;
+    }
+
     private static Path uniqueReportPath(Path reportsDirectory, Instant createdAt) {
         String baseName = "pending-" + FILE_TIMESTAMP.format(createdAt);
         Path report = reportsDirectory.resolve(baseName + ".md");
@@ -31,5 +50,13 @@ public final class CommitReportStore {
             suffix++;
         }
         return report;
+    }
+
+    private static void move(Path source, Path destination) throws IOException {
+        try {
+            Files.move(source, destination, StandardCopyOption.ATOMIC_MOVE);
+        } catch (AtomicMoveNotSupportedException exception) {
+            Files.move(source, destination);
+        }
     }
 }

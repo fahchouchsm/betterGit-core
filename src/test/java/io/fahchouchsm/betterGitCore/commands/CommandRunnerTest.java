@@ -32,7 +32,9 @@ class CommandRunnerTest {
         assertTrue(console.output().contains("BetterGit - Git workflows enhanced for Java projects."));
         assertTrue(console.output().contains("Usage:"));
         assertTrue(console.output().contains("init"));
-        assertTrue(console.output().contains("commit-report"));
+        assertTrue(console.output().contains("commit"));
+        assertTrue(console.output().contains("log"));
+        assertTrue(console.output().contains("ai"));
         assertTrue(console.output().contains("help"));
     }
 
@@ -80,27 +82,59 @@ class CommandRunnerTest {
     }
 
     @Test
-    void commitReportHelpDocumentsTheOptionalDirectory() {
+    void commitHelpDocumentsMessageAndOptionalDirectory() {
         RecordingConsole console = new RecordingConsole();
 
-        int exitCode = execute(console, new TestRepository(true), "commit-report", "--help");
+        int exitCode = execute(console, new TestRepository(true), "commit", "--help");
 
         assertEquals(CommandLine.ExitCode.OK, exitCode);
-        assertTrue(console.output().contains("Generate an AI report for the staged commit changes."));
+        assertTrue(console.output().contains("Create a Git commit with an optional AI-generated report"));
+        assertTrue(console.output().contains("-m, --message"));
         assertTrue(console.output().contains("[DIRECTORY]"));
     }
 
     @Test
-    void disabledCommitReportsReturnSuccessWithoutCallingAi() throws Exception {
+    void explicitMessageCommitsWhenAiReportsAreDisabled() throws Exception {
         RecordingConsole initConsole = new RecordingConsole();
-        RecordingConsole reportConsole = new RecordingConsole();
+        RecordingConsole commitConsole = new RecordingConsole();
 
         assertEquals(CommandLine.ExitCode.OK,
                 execute(initConsole, new TestRepository(true), "init", "--yes"));
-        int reportExitCode = execute(reportConsole, new TestRepository(true), "commit-report");
+        int commitExitCode = execute(
+                commitConsole, new TestRepository(true), "commit", "-m", "feat: explicit message");
 
-        assertEquals(CommandLine.ExitCode.OK, reportExitCode);
-        assertTrue(reportConsole.output().contains("AI commit reports are disabled"));
+        assertEquals(CommandLine.ExitCode.OK, commitExitCode);
+        assertTrue(commitConsole.output().contains("Committed 01234567 · feat: explicit message"));
+    }
+
+    @Test
+    void logAndAiSetupHelpExposeModernOptions() {
+        RecordingConsole logConsole = new RecordingConsole();
+        RecordingConsole aiConsole = new RecordingConsole();
+
+        int logExitCode = execute(logConsole, new TestRepository(true), "log", "--help");
+        int aiExitCode = execute(aiConsole, new TestRepository(true), "ai", "setup", "--help");
+
+        assertEquals(CommandLine.ExitCode.OK, logExitCode);
+        assertTrue(logConsole.output().contains("--details"));
+        assertTrue(logConsole.output().contains("--json"));
+        assertTrue(logConsole.output().contains("--since"));
+        assertEquals(CommandLine.ExitCode.OK, aiExitCode);
+        assertTrue(aiConsole.output().contains("Securely configure the project AI key"));
+    }
+
+    @Test
+    void guidedAiSetupMasksAndStoresLocalConfiguration() throws Exception {
+        RecordingConsole console = new RecordingConsole("y", "local-secret-key", "", "");
+
+        int exitCode = execute(console, new TestRepository(true), "ai", "setup");
+
+        assertEquals(CommandLine.ExitCode.OK, exitCode);
+        assertTrue(Files.readString(projectPath.resolve(".env")).contains("AI_API_KEY=local-secret-key"));
+        assertTrue(Files.readString(projectPath.resolve(".env")).contains("AI_API_MODEL=gemini-2.5-flash"));
+        assertTrue(Files.readString(projectPath.resolve(".gitignore")).contains(".env"));
+        assertFalse(console.output().contains("local-secret-key"));
+        assertTrue(console.output().contains("API key was masked"));
     }
 
     @Test
@@ -210,6 +244,7 @@ class CommandRunnerTest {
                 new RecordingConsole(),
                 new TestRepository(true),
                 project -> new CommitSnapshot("main", List.of(), "", new DiffStatistics(0, 0, 0), "Not run"),
+                (path, message) -> "0123456789012345678901234567890123456789",
                 Map.of("AI_API_KEY", secret),
                 Clock.systemUTC(),
                 (configuration, prompt) -> "# Generated");
@@ -223,6 +258,7 @@ class CommandRunnerTest {
                 console,
                 repository,
                 project -> new CommitSnapshot("main", List.of(), "", new DiffStatistics(0, 0, 0), "Not run"),
+                (path, message) -> "0123456789012345678901234567890123456789",
                 Map.of(),
                 Clock.fixed(Instant.parse("2026-08-13T12:00:00Z"), ZoneOffset.UTC),
                 (configuration, prompt) -> "# Generated"));

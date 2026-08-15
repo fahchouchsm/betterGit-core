@@ -14,6 +14,7 @@ import java.nio.file.Path;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 class JGitManagerTest {
     private final JGitManager manager = new JGitManager();
@@ -155,5 +156,20 @@ class JGitManagerTest {
     void rejectsNullDiffs() {
         assertThrows(IllegalArgumentException.class, () -> new GitChangeDetails(null, ""));
         assertThrows(IllegalArgumentException.class, () -> new GitChangeDetails("", null));
+    }
+
+    @Test
+    void commitsOnlyStagedChangesAndReturnsTheCommitHash() throws Exception {
+        try (Git git = Git.init().setDirectory(temporaryFolder.toFile()).call()) {
+            Files.writeString(temporaryFolder.resolve("staged.txt"), "staged\n");
+            Files.writeString(temporaryFolder.resolve("untracked.txt"), "untracked\n");
+            git.add().addFilepattern("staged.txt").call();
+
+            String commitHash = manager.commitStagedChanges(temporaryFolder, "feat: staged commit");
+
+            assertEquals(40, commitHash.length());
+            assertEquals("feat: staged commit", git.log().call().iterator().next().getShortMessage());
+            assertTrue(git.status().call().getUntracked().contains("untracked.txt"));
+        }
     }
 }

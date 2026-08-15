@@ -18,12 +18,19 @@ import io.fahchouchsm.betterGitCore.commitreport.JavaSourceContextCollector;
 import io.fahchouchsm.betterGitCore.commitreport.ProjectMapScanner;
 import io.fahchouchsm.betterGitCore.commitreport.SensitiveContentFilter;
 import io.fahchouchsm.betterGitCore.configuration.AiConfigurationLoader;
+import io.fahchouchsm.betterGitCore.configuration.AiCredentialStore;
+import io.fahchouchsm.betterGitCore.configuration.AiSetupService;
 import io.fahchouchsm.betterGitCore.configuration.BetterGitConfigurationLoader;
 import io.fahchouchsm.betterGitCore.configuration.BetterGitFileStore;
 import io.fahchouchsm.betterGitCore.documentation.AiSystemTextGenerator;
 import io.fahchouchsm.betterGitCore.documentation.ProjectDocumentationGenerator;
 import io.fahchouchsm.betterGitCore.project.JavaProjectDetector;
 import io.fahchouchsm.betterGitCore.project.MarkdownProjectScanner;
+import io.fahchouchsm.betterGitCore.history.GitHistoryReader;
+import io.fahchouchsm.betterGitCore.history.HistoryDateParser;
+import io.fahchouchsm.betterGitCore.history.HistoryJsonRenderer;
+import io.fahchouchsm.betterGitCore.history.HistoryTextRenderer;
+import io.fahchouchsm.betterGitCore.history.RelativeTimeFormatter;
 import picocli.CommandLine;
 import picocli.CommandLine.Help.Ansi;
 
@@ -46,6 +53,7 @@ public final class CommandRunner {
                 console,
                 new JGitRepositoryAccess(git),
                 new JGitCommitDataSource(git),
+                git::commitStagedChanges,
                 System.getenv(),
                 Clock.systemUTC(),
                 new AiSystemTextGenerator());
@@ -60,18 +68,31 @@ public final class CommandRunner {
     }
 
     private static CommandLine createCommandLine(CommandRuntime runtime) {
+        ApplicationServices services = ApplicationServices.create();
+        BetterGitInitializer initializer = initializer(runtime, services);
+        AiCommitReportGenerator reportGenerator = reportGenerator(runtime, services);
+        CommitCommandDependencies commitDependencies = new CommitCommandDependencies(
+                runtime.commitExecutor(), reportGenerator, services.reportStore(), services.memoryStore(),
+                services.configurationLoader(), services.aiConfigurationLoader(), services.fileStore(),
+                runtime.console(), runtime.environment());
+        AiSetupCommandDependencies aiSetupDependencies = new AiSetupCommandDependencies(
+                services.aiConfigurationLoader(), services.aiSetupService(), services.configurationLoader(),
+                services.fileStore(), runtime.console(), runtime.environment());
+        return commandLine(runtime, initializer, commitDependencies, aiSetupDependencies);
+    }
+
+    private static CommandLine commandLine(
+            CommandRuntime runtime,
+            BetterGitInitializer initializer,
+            CommitCommandDependencies commitDependencies,
+            AiSetupCommandDependencies aiSetupDependencies) {
         ConsolePort console = runtime.console();
-        AiMemoryStore memoryStore = new AiMemoryStore(new ProjectMapScanner());
-        BetterGitConfigurationLoader configurationLoader = new BetterGitConfigurationLoader();
-        BetterGitInitializer initializer = initializer(runtime, memoryStore, configurationLoader);
-        AiCommitReportGenerator reportGenerator = reportGenerator(runtime, memoryStore);
-        CommitReportCommandDependencies reportDependencies = new CommitReportCommandDependencies(
-                reportGenerator, configurationLoader, new AiConfigurationLoader(), new BetterGitFileStore(),
-                console, runtime.environment());
         BetterGitCommand rootCommand = new BetterGitCommand();
         CommandLine commandLine = new CommandLine(rootCommand);
         commandLine.addSubcommand("init", new InitCommand(initializer, console, runtime.projectPath()));
-        commandLine.addSubcommand("commit-report", new CommitReportCommand(reportDependencies, runtime.projectPath()));
+        commandLine.addSubcommand("commit", new CommitCommand(commitDependencies, runtime.projectPath()));
+        commandLine.addSubcommand("log", logCommand(runtime));
+        commandLine.addSubcommand("ai", aiCommand(runtime, aiSetupDependencies));
         commandLine.addSubcommand("help", new CommandLine.HelpCommand());
         commandLine.setOut(console.out());
         commandLine.setErr(console.err());
@@ -79,36 +100,50 @@ public final class CommandRunner {
         return commandLine;
     }
 
-    private static BetterGitInitializer initializer(
-            CommandRuntime runtime,
-            AiMemoryStore memoryStore,
-            BetterGitConfigurationLoader configurationLoader) {
+    private static BetterGitInitializer initializer(CommandRuntime runtime, ApplicationServices services) {
         return new BetterGitInitializer(new InitializationDependencies(
                 runtime.repositoryAccess(),
                 runtime.console(),
-                new AiConfigurationLoader(),
-                configurationLoader,
+                services.aiConfigurationLoader(),
+                services.aiSetupService(),
+                services.configurationLoader(),
                 new JavaProjectDetector(),
                 new MarkdownProjectScanner(),
                 new ProjectDocumentationGenerator(runtime.aiTextGenerator()),
-                new BetterGitFileStore(),
-                memoryStore,
+                services.fileStore(),
+                services.memoryStore(),
                 runtime.environment(),
                 runtime.clock()));
     }
 
-    private static AiCommitReportGenerator reportGenerator(CommandRuntime runtime, AiMemoryStore memoryStore) {
+    private static AiCommitReportGenerator reportGenerator(CommandRuntime runtime, ApplicationServices services) {
         SensitiveContentFilter filter = new SensitiveContentFilter();
         return new AiCommitReportGenerator(new CommitReportDependencies(
                 runtime.commitDataSource(),
                 runtime.aiTextGenerator(),
-                memoryStore,
+                services.memoryStore(),
                 new AiCommitContextBuilder(filter, new JavaSourceContextCollector()),
                 new AiCommitPromptBuilder(),
                 filter,
                 new CommitReportValidator(),
-                new CommitReportStore(),
+                services.reportStore(),
                 runtime.clock()));
+    }
+
+    private static LogCommand logCommand(CommandRuntime runtime) {
+        return new LogCommand(new LogCommandDependencies(
+                new GitHistoryReader(),
+                new HistoryTextRenderer(runtime.clock(), new RelativeTimeFormatter()),
+                new HistoryJsonRenderer(),
+                new HistoryDateParser(runtime.clock()),
+                runtime.console()), runtime.projectPath());
+    }
+
+    private static CommandLine aiCommand(
+            CommandRuntime runtime, AiSetupCommandDependencies dependencies) {
+        CommandLine aiCommand = new CommandLine(new AiCommand());
+        aiCommand.addSubcommand("setup", new AiSetupCommand(dependencies, runtime.projectPath()));
+        return aiCommand;
     }
 
     private static void installHandlers(
@@ -174,5 +209,25 @@ public final class CommandRunner {
     private static void setAnsiRecursively(CommandLine commandLine, Ansi ansi) {
         commandLine.setColorScheme(CommandLine.Help.defaultColorScheme(ansi));
         commandLine.getSubcommands().values().forEach(subcommand -> setAnsiRecursively(subcommand, ansi));
+    }
+
+    private record ApplicationServices(
+            AiMemoryStore memoryStore,
+            BetterGitConfigurationLoader configurationLoader,
+            BetterGitFileStore fileStore,
+            AiConfigurationLoader aiConfigurationLoader,
+            AiSetupService aiSetupService,
+            CommitReportStore reportStore) {
+
+        private static ApplicationServices create() {
+            BetterGitFileStore fileStore = new BetterGitFileStore();
+            return new ApplicationServices(
+                    new AiMemoryStore(new ProjectMapScanner()),
+                    new BetterGitConfigurationLoader(),
+                    fileStore,
+                    new AiConfigurationLoader(),
+                    new AiSetupService(fileStore, new AiCredentialStore()),
+                    new CommitReportStore());
+        }
     }
 }

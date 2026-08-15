@@ -32,6 +32,11 @@ final class RecordingConsole implements ConsolePort {
     }
 
     @Override
+    public String readSecret(String prompt) {
+        return readLine(prompt);
+    }
+
+    @Override
     public boolean confirm(String question, ConfirmationDefault defaultChoice) {
         prompts.add(question);
         return nextSelection(defaultChoice);

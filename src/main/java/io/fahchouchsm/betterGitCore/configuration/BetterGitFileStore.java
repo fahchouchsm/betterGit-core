@@ -19,8 +19,12 @@ public final class BetterGitFileStore {
         if (!Files.isRegularFile(generalFile)) {
             AtomicFileWriter.write(generalFile, generalDocumentation);
         }
-        AtomicFileWriter.write(
-                betterGitDirectory.resolve("config.json"),
+        writeConfiguration(projectPath, configuration);
+    }
+
+    public void writeConfiguration(Path projectPath, BetterGitConfiguration configuration) throws IOException {
+        Path betterGitDirectory = BetterGitDirectories.root(projectPath);
+        AtomicFileWriter.write(betterGitDirectory.resolve("config.json"),
                 JSON.toJson(configuration) + System.lineSeparator());
     }
 

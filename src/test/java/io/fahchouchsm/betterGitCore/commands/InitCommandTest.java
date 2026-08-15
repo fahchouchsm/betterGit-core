@@ -9,6 +9,8 @@ import io.fahchouchsm.betterGitCore.commands.init.InitializationMode;
 import io.fahchouchsm.betterGitCore.commitreport.AiMemoryStore;
 import io.fahchouchsm.betterGitCore.commitreport.ProjectMapScanner;
 import io.fahchouchsm.betterGitCore.configuration.AiConfigurationLoader;
+import io.fahchouchsm.betterGitCore.configuration.AiCredentialStore;
+import io.fahchouchsm.betterGitCore.configuration.AiSetupService;
 import io.fahchouchsm.betterGitCore.configuration.BetterGitConfigurationLoader;
 import io.fahchouchsm.betterGitCore.configuration.BetterGitFileStore;
 import io.fahchouchsm.betterGitCore.documentation.AiTextGenerator;
@@ -157,7 +159,8 @@ class InitCommandTest {
 
     @Test
     void configuresAiCommitReportsWithoutPersistingASecret() throws Exception {
-        RecordingConsole console = new RecordingConsole("y", "y", "selected-model", "yes");
+        RecordingConsole console = new RecordingConsole(
+                "y", "y", "y", "secret-api-key", "selected-model", "", "yes");
 
         initialize(new RecordingRepositoryAccess(true), console, Map.of(), successfulAi(), false);
 
@@ -166,7 +169,9 @@ class InitCommandTest {
         assertTrue(ai.get("memoryEnabled").getAsBoolean());
         assertEquals("selected-model", ai.get("model").getAsString());
         assertFalse(Files.readString(projectPath.resolve(".bettergit/config.json")).contains("AI_API_KEY"));
-        assertTrue(console.output().contains("reports will be skipped until it is supplied"));
+        assertTrue(Files.readString(projectPath.resolve(".env")).contains("AI_API_KEY=secret-api-key"));
+        assertFalse(console.output().contains("secret-api-key"));
+        assertTrue(console.output().contains("API key was masked"));
         assertTrue(Files.isRegularFile(projectPath.resolve(".bettergit/context/project-map.json")));
         assertTrue(Files.isRegularFile(projectPath.resolve(".bettergit/context/recent-history.md")));
         assertTrue(Files.isDirectory(projectPath.resolve(".bettergit/reports")));
@@ -290,15 +295,17 @@ class InitCommandTest {
             Map<String, String> environment,
             AiTextGenerator aiTextGenerator,
             boolean acceptDefaults) throws Exception {
+        BetterGitFileStore fileStore = new BetterGitFileStore();
         BetterGitInitializer initializer = new BetterGitInitializer(new InitializationDependencies(
                 repository,
                 console,
                 new AiConfigurationLoader(),
+                new AiSetupService(fileStore, new AiCredentialStore()),
                 new BetterGitConfigurationLoader(),
                 new JavaProjectDetector(),
                 new MarkdownProjectScanner(),
                 new ProjectDocumentationGenerator(aiTextGenerator),
-                new BetterGitFileStore(),
+                fileStore,
                 new AiMemoryStore(new ProjectMapScanner()),
                 environment,
                 Clock.fixed(Instant.parse("2026-08-13T12:00:00Z"), ZoneOffset.UTC)));

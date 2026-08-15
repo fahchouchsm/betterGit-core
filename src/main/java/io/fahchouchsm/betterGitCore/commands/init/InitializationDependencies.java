@@ -3,6 +3,7 @@ package io.fahchouchsm.betterGitCore.commands.init;
 import io.fahchouchsm.betterGitCore.commands.RepositoryAccess;
 import io.fahchouchsm.betterGitCore.commands.console.ConsolePort;
 import io.fahchouchsm.betterGitCore.configuration.AiConfigurationLoader;
+import io.fahchouchsm.betterGitCore.configuration.AiSetupService;
 import io.fahchouchsm.betterGitCore.configuration.BetterGitConfigurationLoader;
 import io.fahchouchsm.betterGitCore.configuration.BetterGitFileStore;
 import io.fahchouchsm.betterGitCore.commitreport.AiMemoryStore;
@@ -18,6 +19,7 @@ public record InitializationDependencies(
         RepositoryAccess repositoryAccess,
         ConsolePort console,
         AiConfigurationLoader aiConfigurationLoader,
+        AiSetupService aiSetupService,
         BetterGitConfigurationLoader configurationLoader,
         JavaProjectDetector javaProjectDetector,
         MarkdownProjectScanner markdownProjectScanner,

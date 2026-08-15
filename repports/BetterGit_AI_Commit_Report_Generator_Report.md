@@ -22,10 +22,10 @@ BetterGit now supports opt-in, evidence-based AI commit reports for staged Git c
 ### Report generation
 
 ```bash
-bettergit commit-report [DIRECTORY]
+bettergit commit [DIRECTORY] [-m MESSAGE]
 ```
 
-The command reads the staged diff, branch, staged file statuses, and available lightweight BetterGit context. On success it saves `.bettergit/reports/pending-<UTC timestamp>.md`, prints the path, and prints the suggested commit message.
+The command reads the staged diff, branch, staged file statuses, and available lightweight BetterGit context. It creates the real Git commit, then finalizes `.bettergit/reports/<commit-hash>.md` and prints the hash, report path, and selected message.
 
 Disabled features, incomplete AI configuration, empty or fully filtered staged changes, provider failures, timeouts, and invalid AI Markdown are safe skips with exit code `0`. There is no `bettergit commit` orchestration in the current project, so the report remains `pending-*`; no final commit hash is available for automatic renaming.
 
@@ -87,7 +87,7 @@ The context builder:
 
 ## Main production changes
 
-- `commands`: added `commit-report`, reusable directory resolution, runtime wiring, and init prompts.
+- `commands`: added real commit orchestration, reusable directory resolution, runtime wiring, and init prompts.
 - `configuration`: added schema-v2 AI settings, config loading, bounded UTF-8 reads, safe BetterGit directories, and reusable atomic writes.
 - `commitreport`: added staged Git adaptation, memory management, project mapping, source selection, filtering, context and prompt construction, response validation, report persistence, and failure-safe orchestration.
 - `JGitManager`: added current-branch lookup while reusing the existing staged change and diff extraction.
@@ -116,14 +116,14 @@ Verified commands:
 mvn -q test
 mvn -q clean package
 java -jar target/betterGit-core-1.0.jar --help
-java -jar target/betterGit-core-1.0.jar commit-report --help
+java -jar target/betterGit-core-1.0.jar commit --help
 ```
 
 Result: `65` tests, `0` failures, `0` errors, `0` skipped. A temporary-repository smoke test also verified interactive initialization, secret-free schema-v2 JSON, memory file creation, `.gitignore`, and the safe missing-AI skip.
 
 ## Assumptions
 
-- BetterGit currently has no commit command or post-commit lifecycle. The new command therefore generates a pre-commit `pending-*` report and cannot safely infer which later commit owns it.
+- Reports are generated before the commit and finalized by hash only after JGit returns a successful commit.
 - Test/build results are not currently exposed by the Git/commit runtime, so reports explicitly receive `Validation was not run or provided.`
 - Model choices are provider-specific and BetterGit has no provider model registry, so a missing model is entered as text instead of using a hard-coded list.
 - Existing `.env` support is the project’s configured local AI mechanism; credentials remain outside `.bettergit/`.

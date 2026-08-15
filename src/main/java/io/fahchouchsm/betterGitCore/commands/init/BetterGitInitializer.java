@@ -64,7 +64,7 @@ public final class BetterGitInitializer {
         FeatureSettings settings = projectMode == ProjectMode.JAVA
                 ? collectJavaSettings(console, mode)
                 : FeatureSettings.disabled();
-        AiSetup aiSetup = collectAiSetup(console, mode, loadedAiConfiguration);
+        AiSetup aiSetup = collectAiSetup(projectPath, console, mode, loadedAiConfiguration);
         AiConfiguration aiConfiguration = aiSetup.configuration();
         reportAiAvailability(console, aiConfiguration);
         DocumentationResult documentation = generateDocumentation(projectPath, aiConfiguration);
@@ -171,8 +171,11 @@ public final class BetterGitInitializer {
         return new FeatureSettings(selections.get(0), selections.get(1), selections.get(2));
     }
 
-    private static AiSetup collectAiSetup(
-            ConsolePort console, InitializationMode mode, AiConfiguration configuration) throws IOException {
+    private AiSetup collectAiSetup(
+            Path projectPath,
+            ConsolePort console,
+            InitializationMode mode,
+            AiConfiguration configuration) throws IOException {
         if (mode == InitializationMode.SAFE_DEFAULTS) {
             return new AiSetup(configuration, AiCommitSettings.disabled(configuration.model()));
         }
@@ -181,14 +184,14 @@ public final class BetterGitInitializer {
         if (!enabled) {
             return new AiSetup(configuration, AiCommitSettings.disabled(configuration.model()));
         }
-        if (!configuration.hasApiKey()) {
-            console.warning("AI_API_KEY is not configured; commit reports will be skipped until it is supplied.");
-        }
-        String model = configuredModel(console, configuration.model());
+        AiConfiguration completedConfiguration = dependencies.aiSetupService()
+                .complete(projectPath, configuration, console);
+        String model = configuredModel(console, completedConfiguration.model());
         boolean memoryEnabled = console.confirm(
                 "Maintain local BetterGit AI memory/context?", ConfirmationDefault.YES);
         return new AiSetup(
-                new AiConfiguration(configuration.apiKey(), model, configuration.apiUrl()),
+                new AiConfiguration(
+                        completedConfiguration.apiKey(), model, completedConfiguration.apiUrl()),
                 new AiCommitSettings(true, memoryEnabled, model));
     }
 

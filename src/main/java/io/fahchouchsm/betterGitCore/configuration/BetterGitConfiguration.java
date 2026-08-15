@@ -17,4 +17,10 @@ public record BetterGitConfiguration(
         settings = settings == null ? FeatureSettings.disabled() : settings;
         ai = ai == null ? AiCommitSettings.disabled(null) : ai;
     }
+
+    public BetterGitConfiguration withAiModel(String model) {
+        return new BetterGitConfiguration(
+                schemaVersion, createdAt, projectPath, javaDetected, gitAlreadyExisted, settings,
+                aiDocumentationAvailable, new AiCommitSettings(ai.commitReportEnabled(), ai.memoryEnabled(), model));
+    }
 }

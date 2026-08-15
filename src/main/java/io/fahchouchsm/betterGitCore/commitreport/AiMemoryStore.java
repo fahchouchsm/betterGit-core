@@ -58,6 +58,23 @@ public final class AiMemoryStore {
         AtomicFileWriter.write(historyFile, String.join("\n\n---\n\n", entries) + System.lineSeparator());
     }
 
+    public void finalizePendingHistory(Path projectPath, String title, String commitHash) throws IOException {
+        Path historyFile = contextDirectory(projectPath).resolve("recent-history.md");
+        if (!Files.isRegularFile(historyFile)) {
+            return;
+        }
+        List<String> entries = new ArrayList<>(historyEntries(readIfPresent(historyFile)));
+        for (int index = 0; index < entries.size(); index++) {
+            String entry = entries.get(index);
+            if (entry.startsWith("## pending ·") && entry.contains("**Title:** " + title)) {
+                entries.set(index, entry.replaceFirst("^## pending ·", "## " + commitHash + " ·"));
+                AtomicFileWriter.write(historyFile,
+                        String.join("\n\n---\n\n", entries) + System.lineSeparator());
+                return;
+            }
+        }
+    }
+
     private static boolean sameSummary(String existingEntry, HistoryEntry newEntry) {
         return existingEntry.contains("**Title:** " + newEntry.title())
                 && existingEntry.contains("**Summary:** " + newEntry.summary());

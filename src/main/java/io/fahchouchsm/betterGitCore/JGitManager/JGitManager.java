@@ -1,5 +1,6 @@
 package io.fahchouchsm.betterGitCore.JGitManager;
 
+import io.fahchouchsm.betterGitCore.JGitManager.exceptions.GitCommitException;
 import io.fahchouchsm.betterGitCore.JGitManager.exceptions.GitInitializationException;
 import io.fahchouchsm.betterGitCore.JGitManager.exceptions.GitNoStagedChangesException;
 import io.fahchouchsm.betterGitCore.JGitManager.exceptions.GitRepositoryNotFoundException;
@@ -7,6 +8,7 @@ import io.fahchouchsm.betterGitCore.JGitManager.exceptions.GitRepositoryPathExce
 import io.fahchouchsm.betterGitCore.JGitManager.exceptions.GitStateReadException;
 import org.eclipse.jgit.api.Git;
 import org.eclipse.jgit.api.Status;
+import org.eclipse.jgit.api.errors.EmptyCommitException;
 import org.eclipse.jgit.api.errors.GitAPIException;
 import org.eclipse.jgit.errors.RepositoryNotFoundException;
 import org.eclipse.jgit.dircache.DirCacheIterator;
@@ -110,6 +112,22 @@ public final class JGitManager {
             throw new GitRepositoryNotFoundException("Not a Git repository: " + repositoryPath, exception);
         } catch (IOException exception) {
             throw new GitStateReadException("Could not read the current Git branch from " + repositoryPath, exception);
+        }
+    }
+
+    public String commitStagedChanges(Path projectPath, String message) {
+        Path repositoryPath = requireDirectory(projectPath);
+        if (message == null || message.isBlank()) {
+            throw new IllegalArgumentException("Commit message must not be blank.");
+        }
+        try (Git git = Git.open(repositoryPath.toFile())) {
+            return git.commit().setMessage(message.strip()).call().name();
+        } catch (EmptyCommitException exception) {
+            throw new GitNoStagedChangesException("No staged changes are available to commit.");
+        } catch (RepositoryNotFoundException exception) {
+            throw new GitRepositoryNotFoundException("Not a Git repository: " + repositoryPath, exception);
+        } catch (IOException | GitAPIException exception) {
+            throw new GitCommitException("Could not create Git commit in " + repositoryPath, exception);
         }
     }
 

@@ -11,6 +11,7 @@ import java.io.OutputStreamWriter;
 import java.io.PrintWriter;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
 
@@ -49,6 +50,22 @@ public final class SystemConsoleAdapter implements ConsolePort {
         output.flush();
         String answer = input.readLine();
         return answer == null ? "" : answer;
+    }
+
+    @Override
+    public String readSecret(String prompt) throws IOException {
+        if (terminalInteraction == TerminalInteraction.TEXT) {
+            return readLine(prompt);
+        }
+        char[] secret = System.console().readPassword("%s", prompt);
+        if (secret == null) {
+            return "";
+        }
+        try {
+            return new String(secret);
+        } finally {
+            Arrays.fill(secret, '\0');
+        }
     }
 
     @Override
