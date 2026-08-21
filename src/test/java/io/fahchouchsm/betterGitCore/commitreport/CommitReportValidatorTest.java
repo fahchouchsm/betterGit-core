@@ -31,7 +31,7 @@ class CommitReportValidatorTest {
     }
 
     @Test
-    void rejectsMultipleOpeningParagraphsAndAdditionalHeadings() {
+    void usesFirstOpeningParagraphAndRejectsAdditionalHeadings() {
         String multipleParagraphs = """
                 First paragraph.
 
@@ -56,7 +56,7 @@ class CommitReportValidatorTest {
                 Too much detail.
                 """;
 
-        assertThrows(IllegalArgumentException.class, () -> validator.validate(multipleParagraphs));
+        assertEquals("First paragraph.", validator.validate(multipleParagraphs).commitMessage());
         assertThrows(IllegalArgumentException.class, () -> validator.validate(additionalHeading));
     }
 
@@ -66,16 +66,37 @@ class CommitReportValidatorTest {
         String emptyValidation = "Description.\n\n## Changes\n- A change.\n\n## Validation\n";
         String overlongDescription = "x".repeat(161)
                 + "\n\n## Changes\n- A change.\n\n## Validation\nNot run.\n";
-        String tooManyChanges = "Description.\n\n## Changes\n"
-                + "- A change.\n".repeat(6) + "\n## Validation\nNot run.\n";
         String multipleValidationParagraphs = "Description.\n\n## Changes\n- A change.\n\n"
                 + "## Validation\nTests passed.\n\nManual review passed.\n";
 
         assertThrows(IllegalArgumentException.class, () -> validator.validate(emptyChanges));
         assertThrows(IllegalArgumentException.class, () -> validator.validate(emptyValidation));
         assertThrows(IllegalArgumentException.class, () -> validator.validate(overlongDescription));
-        assertThrows(IllegalArgumentException.class, () -> validator.validate(tooManyChanges));
         assertThrows(IllegalArgumentException.class, () -> validator.validate(multipleValidationParagraphs));
+    }
+
+    @Test
+    void keepsOnlyTheFirstFiveChangeBullets() {
+        String response = """
+                Description.
+
+                ## Changes
+                - Change 1.
+                - Change 2.
+                - Change 3.
+                - Change 4.
+                - Change 5.
+                - Change 6.
+
+                ## Validation
+                Not run.
+                """;
+
+        ValidatedCommitReport report = validator.validate(response);
+
+        assertEquals(5, report.changedAreas().size());
+        assertTrue(report.markdown().contains("- Change 5."));
+        assertFalse(report.markdown().contains("- Change 6."));
     }
 
     @Test

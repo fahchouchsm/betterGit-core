@@ -55,10 +55,12 @@ public final class AiCommitReportGenerator {
             generatedMarkdown = dependencies.aiTextGenerator()
                     .generate(attempt.request().aiConfiguration(), attempt.prompt().text());
         } catch (IOException exception) {
-            return CommitReportOutcome.skipped(CommitReportStatus.AI_REQUEST_FAILED);
+            return failedOutcome(attempt, CommitReportStatus.AI_REQUEST_FAILED,
+                    exception.getMessage(), null);
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
-            return CommitReportOutcome.skipped(CommitReportStatus.AI_REQUEST_FAILED);
+            return failedOutcome(attempt, CommitReportStatus.AI_REQUEST_FAILED,
+                    "The AI request was interrupted.", null);
         }
         return persistValidReport(attempt, generatedMarkdown);
     }
@@ -71,7 +73,8 @@ public final class AiCommitReportGenerator {
         try {
             report = dependencies.validator().validate(safeMarkdown);
         } catch (IllegalArgumentException exception) {
-            return CommitReportOutcome.skipped(CommitReportStatus.INVALID_AI_RESPONSE);
+            return failedOutcome(attempt, CommitReportStatus.INVALID_AI_RESPONSE,
+                    exception.getMessage(), safeMarkdown);
         }
         Instant createdAt = dependencies.clock().instant();
         Path reportPath = dependencies.reportStore()
@@ -79,6 +82,19 @@ public final class AiCommitReportGenerator {
         updateHistory(attempt, createdAt, report);
         return CommitReportOutcome.generated(
                 reportPath, report.commitMessage(), attempt.prompt());
+    }
+
+    private CommitReportOutcome failedOutcome(
+            GenerationAttempt attempt, CommitReportStatus status, String reason, String response) throws IOException {
+        String safeReason = dependencies.filter().redact(
+                reason == null ? "No error details were provided." : reason,
+                attempt.request().aiConfiguration().apiKey());
+        String safeResponse = dependencies.filter().redact(
+                response == null ? "" : response,
+                attempt.request().aiConfiguration().apiKey());
+        Path diagnosticPath = dependencies.reportStore().saveFailureDiagnostic(
+                attempt.request().projectPath(), dependencies.clock().instant(), safeReason, safeResponse);
+        return CommitReportOutcome.failed(status, diagnosticPath);
     }
 
     private void updateHistory(GenerationAttempt attempt, Instant createdAt, ValidatedCommitReport report)

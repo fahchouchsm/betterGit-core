@@ -170,6 +170,28 @@ class AiCommitReportGeneratorTest {
                 .startsWith("Adds concise documentation for staged changes.\n\n## Changes"));
         assertEquals("Adds concise documentation for staged changes.", successful.commitMessage());
         assertEquals(CommitReportStatus.AI_REQUEST_FAILED, failed.status());
+        assertTrue(Files.isRegularFile(failed.diagnosticPath()));
+        String diagnostic = Files.readString(failed.diagnosticPath());
+        assertTrue(diagnostic.contains("provider failed with [REDACTED]"));
+        assertFalse(diagnostic.contains("secret-api-key"));
+    }
+
+    @Test
+    void invalidAiResponseIsSavedWithTheValidationReason() throws Exception {
+        String invalidResponse = "# Unexpected title\n\nsecret-api-key";
+
+        CommitReportOutcome outcome = generator(
+                new RecordingCommitSource(snapshot("+safe")), new RecordingAi(invalidResponse))
+                .generate(request(enabledSettings(false), COMPLETE_AI, CommitReportLimits.DEFAULT_MAXIMUM));
+
+        assertEquals(CommitReportStatus.INVALID_AI_RESPONSE, outcome.status());
+        assertTrue(Files.isRegularFile(outcome.diagnosticPath()));
+        assertTrue(outcome.diagnosticPath().startsWith(projectPath.resolve(".bettergit/reports/errors")));
+        String diagnostic = Files.readString(outcome.diagnosticPath());
+        assertTrue(diagnostic.contains("missing required Markdown headings"));
+        assertTrue(diagnostic.contains("# Unexpected title"));
+        assertTrue(diagnostic.contains("[REDACTED]"));
+        assertFalse(diagnostic.contains("secret-api-key"));
     }
 
     private AiCommitReportGenerator generator(CommitDataSource source, AiTextGenerator ai) {

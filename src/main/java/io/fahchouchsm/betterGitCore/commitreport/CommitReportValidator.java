@@ -54,8 +54,8 @@ public final class CommitReportValidator {
     }
 
     private static String normalizedDescription(String description) {
-        String normalized = normalizedParagraph(
-                description, "AI commit report must start with one description paragraph.");
+        String firstParagraph = description.strip().split("\\R\\s*\\R", 2)[0];
+        String normalized = firstParagraph.replaceAll("\\s+", " ").strip();
         if (normalized.isBlank() || normalized.length() > MAXIMUM_DESCRIPTION_CHARACTERS) {
             throw new IllegalArgumentException("AI commit description must contain 1 to 160 characters.");
         }
@@ -67,16 +67,19 @@ public final class CommitReportValidator {
                 .map(String::strip)
                 .filter(line -> !line.isBlank())
                 .toList();
-        if (lines.isEmpty() || lines.size() > MAXIMUM_CHANGED_AREAS) {
-            throw new IllegalArgumentException("AI commit report must contain one to five change bullets.");
+        if (lines.isEmpty()) {
+            throw new IllegalArgumentException("AI commit report must contain change bullets.");
         }
-        return lines.stream().map(CommitReportValidator::normalizedChangeArea).toList();
+        return lines.stream()
+                .map(CommitReportValidator::normalizedChangeArea)
+                .limit(MAXIMUM_CHANGED_AREAS)
+                .toList();
     }
 
     private static String normalizedChangeArea(String line) {
         Matcher bullet = CHANGE_BULLET.matcher(line);
         if (!bullet.matches()) {
-            throw new IllegalArgumentException("AI commit report must contain one to five change bullets.");
+            throw new IllegalArgumentException("AI commit report must contain change bullets.");
         }
         return bullet.group(1).strip();
     }
