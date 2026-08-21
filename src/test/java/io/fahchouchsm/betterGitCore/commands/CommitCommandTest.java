@@ -89,8 +89,12 @@ class CommitCommandTest {
         assertEquals(CommandLine.ExitCode.SOFTWARE, exitCode);
         assertNull(commits.message);
         assertTrue(console.output().contains("provider request failed"));
+        assertTrue(console.output().contains("AI failure details saved:"));
         assertTrue(console.errors().contains("Commit cancelled"));
         assertFalse(console.output().contains("secret-api-key"));
+        try (var diagnostics = Files.list(projectPath.resolve(".bettergit/reports/errors"))) {
+            assertEquals(1, diagnostics.count());
+        }
     }
 
     @Test

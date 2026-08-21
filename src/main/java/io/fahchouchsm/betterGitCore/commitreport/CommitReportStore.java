@@ -24,6 +24,52 @@ public final class CommitReportStore {
         return report;
     }
 
+    public Path saveFailureDiagnostic(
+            Path projectPath, Instant createdAt, String reason, String redactedResponse) throws IOException {
+        Path errorsDirectory = failureDirectory(projectPath);
+        Path diagnostic = uniqueFailurePath(errorsDirectory, createdAt);
+        AtomicFileWriter.writeOwnerOnly(
+                diagnostic, failureDiagnosticContent(createdAt, reason, redactedResponse));
+        return diagnostic;
+    }
+
+    private static String failureDiagnosticContent(
+            Instant createdAt, String reason, String redactedResponse) {
+        return """
+                # BetterGit AI report failure
+
+                **Time:** %s
+
+                ## Reason
+
+                %s
+
+                ## Expected response format
+
+                    Concise commit description (maximum 160 characters).
+
+                    ## Changes
+                    - One to five change bullets
+
+                    ## Validation
+                    One validation paragraph (maximum 240 characters).
+
+                ## Redacted AI response
+
+                %s
+                """.formatted(createdAt, indented(reason), indented(redactedResponse));
+    }
+
+    private static Path failureDirectory(Path projectPath) throws IOException {
+        Path errorsDirectory = BetterGitDirectories.child(projectPath, "reports").resolve("errors");
+        if (Files.isSymbolicLink(errorsDirectory)) {
+            throw new IOException("Refusing to write through symbolic BetterGit errors directory: "
+                    + errorsDirectory);
+        }
+        Files.createDirectories(errorsDirectory);
+        return errorsDirectory;
+    }
+
     public Path finalizePending(Path projectPath, Path pendingReport, String commitHash) throws IOException {
         if (!commitHash.matches("[0-9a-f]{40}")) {
             throw new IllegalArgumentException("Commit hash must contain 40 lowercase hexadecimal characters.");
@@ -50,6 +96,25 @@ public final class CommitReportStore {
             suffix++;
         }
         return report;
+    }
+
+    private static Path uniqueFailurePath(Path errorsDirectory, Instant createdAt) {
+        String baseName = "ai-report-failure-" + FILE_TIMESTAMP.format(createdAt);
+        Path diagnostic = errorsDirectory.resolve(baseName + ".md");
+        int suffix = 2;
+        while (Files.exists(diagnostic)) {
+            diagnostic = errorsDirectory.resolve(baseName + "-" + suffix + ".md");
+            suffix++;
+        }
+        return diagnostic;
+    }
+
+    private static String indented(String text) {
+        String safeText = text == null || text.isBlank() ? "[No response body was available.]" : text.strip();
+        return safeText.lines()
+                .map(line -> "    " + line)
+                .reduce((left, right) -> left + System.lineSeparator() + right)
+                .orElse("    [No response body was available.]");
     }
 
     private static void move(Path source, Path destination) throws IOException {

@@ -119,12 +119,12 @@ public final class CommitCommand implements Callable<Integer> {
         CommitReportOutcome outcome = dependencies.reportGenerator().generate(new CommitReportRequest(
                 projectPath, commitConfiguration.betterGit(), commitConfiguration.ai(),
                 CommitReportLimits.fromEnvironment(dependencies.environment())));
-        reportSkip(outcome.status());
+        reportSkip(outcome);
         return outcome;
     }
 
-    private void reportSkip(CommitReportStatus status) {
-        switch (status) {
+    private void reportSkip(CommitReportOutcome outcome) {
+        switch (outcome.status()) {
             case AI_NOT_CONFIGURED -> dependencies.console().warning(
                     "AI report skipped: configure AI_API_KEY, AI_API_MODEL, and AI_API_URL.");
             case AI_REQUEST_FAILED -> dependencies.console().warning(
@@ -133,6 +133,9 @@ public final class CommitCommand implements Callable<Integer> {
                     "AI report skipped because the response was invalid.");
             default -> {
             }
+        }
+        if (outcome.diagnosticPath() != null) {
+            dependencies.console().warning("AI failure details saved: " + outcome.diagnosticPath());
         }
     }
 
