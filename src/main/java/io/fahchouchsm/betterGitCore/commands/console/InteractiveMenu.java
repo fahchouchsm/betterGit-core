@@ -13,10 +13,10 @@ import java.util.ArrayList;
 import java.util.List;
 
 final class InteractiveMenu {
-    private static final int PREVIOUS = 1;
-    private static final int NEXT = 2;
-    private static final int TOGGLE = 3;
-    private static final int SUBMIT = 4;
+    static final int PREVIOUS = 1;
+    static final int NEXT = 2;
+    static final int TOGGLE = 3;
+    static final int SUBMIT = 4;
     private static final int IGNORE = 5;
 
     boolean confirm(String question, ConfirmationDefault defaultChoice) throws IOException {
@@ -34,7 +34,14 @@ final class InteractiveMenu {
     }
 
     List<Boolean> chooseMany(String question, List<String> choices) throws IOException {
-        return run(new MenuView(question, choices, SelectionMode.MULTIPLE), 0);
+        List<Boolean> selectedRows = run(multipleSelectionMenu(question, choices), 0);
+        return List.copyOf(selectedRows.subList(0, choices.size()));
+    }
+
+    static MenuView multipleSelectionMenu(String question, List<String> choices) {
+        List<String> menuRows = new ArrayList<>(choices);
+        menuRows.add("Continue");
+        return new MenuView(question, List.copyOf(menuRows), SelectionMode.MULTIPLE);
     }
 
     private List<Boolean> run(MenuView menu, int initialCursor) throws IOException {
@@ -76,12 +83,21 @@ final class InteractiveMenu {
         while (true) {
             render(terminal, menu, state);
             int action = readAction(keys, bindings);
-            if (action == SUBMIT) {
+            if (submitsSelection(action, menu, state)) {
                 terminal.writer().println();
                 return state.submittedSelection(menu.mode());
             }
-            state.apply(action, menu.mode());
+            state.apply(selectionAction(action, menu.mode()), menu);
         }
+    }
+
+    static boolean submitsSelection(int action, MenuView menu, MenuState state) {
+        return action == SUBMIT
+                && (menu.mode() == SelectionMode.SINGLE || menu.isSubmitRow(state.cursor()));
+    }
+
+    static int selectionAction(int action, SelectionMode mode) {
+        return action == SUBMIT && mode == SelectionMode.MULTIPLE ? TOGGLE : action;
     }
 
     private static int readAction(BindingReader keys, KeyMap<Integer> bindings) throws IOException {
@@ -123,7 +139,7 @@ final class InteractiveMenu {
         }
         for (int index = window.first(); index < window.lastExclusive(); index++) {
             terminal.writer().println("  " + choiceLine(
-                    menu.choices().get(index), state, index, menu.mode()));
+                    menu.choices().get(index), state, index, menu));
         }
         if (window.lastExclusive() < menu.choices().size()) {
             terminal.writer().println("    ↓ " + (menu.choices().size() - window.lastExclusive()) + " more");
@@ -153,13 +169,16 @@ final class InteractiveMenu {
 
     private static String instruction(SelectionMode mode) {
         return mode == SelectionMode.MULTIPLE
-                ? "↑/↓ Navigate   Space Toggle   Enter Confirm"
+                ? "↑/↓ Navigate   Enter Select   Space Toggle   [ Continue ] Finish"
                 : "↑/↓ Navigate   Enter Confirm";
     }
 
-    private static String choiceLine(String choice, MenuState state, int index, SelectionMode mode) {
+    private static String choiceLine(String choice, MenuState state, int index, MenuView menu) {
         String pointer = state.cursorAt(index) ? "❯" : " ";
-        String marker = mode == SelectionMode.MULTIPLE
+        if (menu.isSubmitRow(index)) {
+            return "%s   [ %s ]".formatted(pointer, choice);
+        }
+        String marker = menu.mode() == SelectionMode.MULTIPLE
                 ? (state.selectedAt(index) ? "◉" : "◯")
                 : " ";
         return "%s %s %s".formatted(pointer, marker, choice);
@@ -173,38 +192,43 @@ final class InteractiveMenu {
         return List.copyOf(choices);
     }
 
-    private record MenuView(String question, List<String> choices, SelectionMode mode) {
+    record MenuView(String question, List<String> choices, SelectionMode mode) {
+        boolean isSubmitRow(int index) {
+            return mode == SelectionMode.MULTIPLE && index == choices.size() - 1;
+        }
     }
 
     private record IndexWindow(int first, int lastExclusive) {
     }
 
-    private enum SelectionMode {
+    enum SelectionMode {
         SINGLE,
         MULTIPLE
     }
 
-    private static final class MenuState {
+    static final class MenuState {
         private final boolean[] selected;
         private int cursor;
 
-        private MenuState(int choiceCount, int initialCursor) {
+        MenuState(int choiceCount, int initialCursor) {
             selected = new boolean[choiceCount];
             cursor = initialCursor;
         }
 
-        private void apply(int action, SelectionMode mode) {
+        void apply(int action, MenuView menu) {
             cursor = switch (action) {
                 case PREVIOUS -> Math.floorMod(cursor - 1, selected.length);
                 case NEXT -> (cursor + 1) % selected.length;
                 default -> cursor;
             };
-            if (mode == SelectionMode.MULTIPLE && action == TOGGLE) {
+            if (menu.mode() == SelectionMode.MULTIPLE
+                    && action == TOGGLE
+                    && !menu.isSubmitRow(cursor)) {
                 selected[cursor] = !selected[cursor];
             }
         }
 
-        private List<Boolean> submittedSelection(SelectionMode mode) {
+        List<Boolean> submittedSelection(SelectionMode mode) {
             if (mode == SelectionMode.SINGLE) {
                 selected[cursor] = true;
             }
@@ -219,7 +243,7 @@ final class InteractiveMenu {
             return selected[index];
         }
 
-        private int cursor() {
+        int cursor() {
             return cursor;
         }
     }
