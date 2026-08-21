@@ -15,6 +15,8 @@ import io.fahchouchsm.betterGitCore.commitreport.ProjectMapScanner;
 import io.fahchouchsm.betterGitCore.commitreport.SensitiveContentFilter;
 import io.fahchouchsm.betterGitCore.configuration.AiCommitSettings;
 import io.fahchouchsm.betterGitCore.configuration.AiConfigurationLoader;
+import io.fahchouchsm.betterGitCore.configuration.AiCredentialStore;
+import io.fahchouchsm.betterGitCore.configuration.AiSetupService;
 import io.fahchouchsm.betterGitCore.configuration.BetterGitConfiguration;
 import io.fahchouchsm.betterGitCore.configuration.BetterGitConfigurationLoader;
 import io.fahchouchsm.betterGitCore.configuration.BetterGitFileStore;
@@ -35,6 +37,7 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class CommitCommandTest {
@@ -44,6 +47,8 @@ class CommitCommandTest {
     @TempDir
     Path projectPath;
 
+    private CommitSnapshot commitSnapshot = snapshot();
+
     @Test
     void aiSuggestionCreatesCommitAndFinalizesReportAndHistory() throws Exception {
         writeConfiguration(true);
@@ -51,12 +56,13 @@ class CommitCommandTest {
         RecordingConsole console = new RecordingConsole();
         CommitCommand command = command(validReportGenerator(), commits, console);
 
-        int exitCode = new CommandLine(command).execute();
+        int exitCode = new CommandLine(command).execute("-m", "this must not replace the report description");
 
         assertEquals(CommandLine.ExitCode.OK, exitCode);
-        assertEquals("feat(log): add modern history", commits.message);
+        assertEquals("Adds a modern history view for repository commits.", commits.message);
         Path report = projectPath.resolve(".bettergit/reports/" + COMMIT_HASH + ".md");
         assertTrue(Files.isRegularFile(report));
+        assertTrue(Files.readString(report).startsWith(commits.message + "\n\n## Changes"));
         assertFalse(Files.list(report.getParent())
                 .anyMatch(path -> path.getFileName().toString().startsWith("pending-")));
         assertTrue(Files.readString(projectPath.resolve(".bettergit/context/recent-history.md"))
@@ -65,7 +71,7 @@ class CommitCommandTest {
     }
 
     @Test
-    void providerFailureDoesNotBlockExplicitCommitMessage() throws Exception {
+    void providerFailureCancelsAnAiDocumentedCommit() throws Exception {
         writeConfiguration(false);
         RecordingCommitExecutor commits = new RecordingCommitExecutor();
         RecordingConsole console = new RecordingConsole();
@@ -76,29 +82,90 @@ class CommitCommandTest {
 
         int exitCode = new CommandLine(command).execute("-m", "fix: explicit fallback");
 
-        assertEquals(CommandLine.ExitCode.OK, exitCode);
-        assertEquals("fix: explicit fallback", commits.message);
+        assertEquals(CommandLine.ExitCode.SOFTWARE, exitCode);
+        assertNull(commits.message);
         assertTrue(console.output().contains("provider request failed"));
+        assertTrue(console.errors().contains("Commit cancelled"));
         assertFalse(console.output().contains("secret-api-key"));
+    }
+
+    @Test
+    void missingApiKeyStartsGuidedSetupAndStoresTheKey() throws Exception {
+        writeConfiguration(false);
+        RecordingCommitExecutor commits = new RecordingCommitExecutor();
+        RecordingConsole console = new RecordingConsole("y", "", "stored-key", "", "");
+        Map<String, String> settingsWithoutKey = Map.of(
+                "AI_API_MODEL", "test-model",
+                "AI_API_URL", "https://ai.example/{model}");
+        CommitCommand command = command(
+                validReportGenerator(), commits, console, settingsWithoutKey);
+
+        int exitCode = new CommandLine(command).execute();
+
+        assertEquals(CommandLine.ExitCode.OK, exitCode);
+        assertEquals("Adds a modern history view for repository commits.", commits.message);
+        assertTrue(Files.readString(projectPath.resolve(".env")).contains("AI_API_KEY=stored-key"));
+        assertFalse(console.output().contains("stored-key"));
+    }
+
+    @Test
+    void missingProjectConfigurationNamesTheTargetDirectory() {
+        RecordingConsole console = new RecordingConsole();
+        RecordingCommitExecutor commits = new RecordingCommitExecutor();
+        CommitCommand command = command(validReportGenerator(), commits, console);
+
+        int exitCode = new CommandLine(command).execute();
+
+        assertEquals(CommandLine.ExitCode.USAGE, exitCode);
+        assertNull(commits.message);
+        assertTrue(console.output().contains("No BetterGit configuration found in " + projectPath));
+        assertTrue(console.output().contains("pass an initialized directory"));
+    }
+
+    @Test
+    void noStagedChangesIsASuccessfulInformationalNoOp() throws Exception {
+        writeConfiguration(false);
+        commitSnapshot = new CommitSnapshot(
+                "main", List.of(), "", new DiffStatistics(0, 0, 0), "Validation was not run or provided.");
+        RecordingCommitExecutor commits = new RecordingCommitExecutor();
+        RecordingConsole console = new RecordingConsole();
+        CommitCommand command = command(validReportGenerator(), commits, console);
+
+        int exitCode = new CommandLine(command).execute();
+
+        assertEquals(CommandLine.ExitCode.OK, exitCode);
+        assertNull(commits.message);
+        assertTrue(console.output().contains("Nothing to commit"));
+        assertTrue(console.output().contains("non-ignored file"));
+        assertTrue(console.errors().isEmpty());
     }
 
     private CommitCommand command(
             AiTextGenerator ai, RecordingCommitExecutor commits, RecordingConsole console) {
+        return command(ai, commits, console, Map.of(
+                "AI_API_KEY", "secret-api-key",
+                "AI_API_MODEL", "test-model",
+                "AI_API_URL", "https://ai.example/{model}"));
+    }
+
+    private CommitCommand command(
+            AiTextGenerator ai,
+            RecordingCommitExecutor commits,
+            RecordingConsole console,
+            Map<String, String> environment) {
         BetterGitFileStore fileStore = new BetterGitFileStore();
         AiMemoryStore memoryStore = new AiMemoryStore(new ProjectMapScanner());
         CommitReportStore reportStore = new CommitReportStore();
         SensitiveContentFilter filter = new SensitiveContentFilter();
         AiCommitReportGenerator generator = new AiCommitReportGenerator(new CommitReportDependencies(
-                project -> snapshot(), ai, memoryStore,
+                project -> commitSnapshot, ai, memoryStore,
                 new AiCommitContextBuilder(filter, new JavaSourceContextCollector()),
                 new AiCommitPromptBuilder(), filter, new CommitReportValidator(), reportStore,
                 Clock.fixed(NOW, ZoneOffset.UTC)));
         CommitCommandDependencies dependencies = new CommitCommandDependencies(
                 commits, generator, reportStore, memoryStore, new BetterGitConfigurationLoader(),
-                new AiConfigurationLoader(), fileStore, console, Map.of(
-                        "AI_API_KEY", "secret-api-key",
-                        "AI_API_MODEL", "test-model",
-                        "AI_API_URL", "https://ai.example/{model}"));
+                new AiConfigurationLoader(), new AiSetupService(fileStore, new AiCredentialStore()),
+                fileStore, console, environment);
         return new CommitCommand(dependencies, projectPath);
     }
 
@@ -118,25 +185,13 @@ class CommitCommandTest {
 
     private static AiTextGenerator validReportGenerator() {
         return (configuration, prompt) -> """
-                # Commit Report
+                Adds a modern history view for repository commits.
 
-                ## Suggested commit message
-                feat(log): add modern history
-
-                ## Summary
-                Adds a modern history view.
-
-                ## Changed areas
+                ## Changes
                 - history: rich log output
 
-                ## Technical details
-                - Reads commit metadata with JGit.
-
                 ## Validation
-                - Tests passed.
-
-                ## Risks or follow-up
-                - None identified.
+                Tests passed.
                 """;
     }
 

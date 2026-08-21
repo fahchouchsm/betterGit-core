@@ -39,7 +39,7 @@ public final class AiSetupService {
             console.warning("AI setup deferred. Run 'bettergit ai setup' whenever you are ready.");
             return current;
         }
-        return collectAndSave(projectPath, current, console);
+        return collectAndSave(projectPath, current, console, KeyEntryMode.REUSE_EXISTING);
     }
 
     public AiConfiguration configure(
@@ -49,14 +49,17 @@ public final class AiSetupService {
                 ConfirmationDefault.NO)) {
             return current;
         }
-        return collectAndSave(projectPath, current, console);
+        return collectAndSave(projectPath, current, console, KeyEntryMode.PROMPT_FOR_REPLACEMENT);
     }
 
     private AiConfiguration collectAndSave(
-            Path projectPath, AiConfiguration current, ConsolePort console) throws IOException {
+            Path projectPath,
+            AiConfiguration current,
+            ConsolePort console,
+            KeyEntryMode keyEntryMode) throws IOException {
         ServiceSelection selection = new ServiceSelection(selectedPreset(console, current), current);
         showKeyLocation(console, selection);
-        String apiKey = apiKey(selection, console);
+        String apiKey = apiKey(selection, console, keyEntryMode);
         if (apiKey.isBlank()) {
             console.warning("AI setup deferred because no API key was entered.");
             return current;
@@ -103,9 +106,17 @@ public final class AiSetupService {
         }
     }
 
-    private static String apiKey(ServiceSelection selection, ConsolePort console) throws IOException {
-        if (selection.canReuseKey()) {
+    private static String apiKey(
+            ServiceSelection selection,
+            ConsolePort console,
+            KeyEntryMode keyEntryMode) throws IOException {
+        if (selection.canReuseKey() && keyEntryMode == KeyEntryMode.REUSE_EXISTING) {
             return selection.current().apiKey();
+        }
+        if (selection.canReuseKey()) {
+            String replacement = console.readSecret(
+                    "AI API key (input hidden; leave blank to keep the current key): ").strip();
+            return replacement.isBlank() ? selection.current().apiKey() : replacement;
         }
         return console.readSecret("AI API key (input hidden): ").strip();
     }
@@ -199,5 +210,10 @@ public final class AiSetupService {
 
     private record ModelSelection(
             AiServicePreset preset, String currentModel, String apiKey, String apiUrl) {
+    }
+
+    private enum KeyEntryMode {
+        REUSE_EXISTING,
+        PROMPT_FOR_REPLACEMENT
     }
 }

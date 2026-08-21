@@ -5,7 +5,7 @@ import java.nio.file.Path;
 public record CommitReportOutcome(
         CommitReportStatus status,
         Path reportPath,
-        String suggestedCommitMessage,
+        String commitMessage,
         boolean inputTruncated) {
 
     public static CommitReportOutcome skipped(CommitReportStatus status) {
@@ -13,8 +13,8 @@ public record CommitReportOutcome(
     }
 
     public static CommitReportOutcome generated(
-            Path reportPath, String suggestedCommitMessage, PromptPayload prompt) {
+            Path reportPath, String commitMessage, PromptPayload prompt) {
         return new CommitReportOutcome(
-                CommitReportStatus.GENERATED, reportPath, suggestedCommitMessage, prompt.truncated());
+                CommitReportStatus.GENERATED, reportPath, commitMessage, prompt.truncated());
     }
 }

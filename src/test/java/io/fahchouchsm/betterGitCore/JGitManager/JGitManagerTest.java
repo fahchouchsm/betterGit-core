@@ -172,4 +172,23 @@ class JGitManagerTest {
             assertTrue(git.status().call().getUntracked().contains("untracked.txt"));
         }
     }
+
+    @Test
+    void readsAndCommitsTheContainingRepositoryFromANestedDirectory() throws Exception {
+        Path nestedProject = Files.createDirectories(temporaryFolder.resolve("nested/project"));
+        try (Git git = Git.init().setDirectory(temporaryFolder.toFile()).call()) {
+            Files.writeString(temporaryFolder.resolve("staged.txt"), "staged from nested project\n");
+            git.add().addFilepattern("staged.txt").call();
+
+            GitChanges changes = manager.getChangesBeforeCommit(nestedProject);
+            GitChangeDetails details = manager.getChangeDetailsBeforeCommit(nestedProject);
+            String commitHash = manager.commitStagedChanges(nestedProject, "Document the nested project change.");
+
+            assertTrue(changes.added().contains("staged.txt"));
+            assertTrue(details.stagedDiff().contains("+staged from nested project"));
+            assertEquals(40, commitHash.length());
+            assertEquals("Document the nested project change.",
+                    git.log().call().iterator().next().getShortMessage());
+        }
+    }
 }

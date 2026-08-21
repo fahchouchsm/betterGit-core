@@ -88,7 +88,7 @@ class CommandRunnerTest {
         int exitCode = execute(console, new TestRepository(true), "commit", "--help");
 
         assertEquals(CommandLine.ExitCode.OK, exitCode);
-        assertTrue(console.output().contains("Create a Git commit with an optional AI-generated report"));
+        assertTrue(console.output().contains("documented by a concise AI-generated Markdown report"));
         assertTrue(console.output().contains("-m, --message"));
         assertTrue(console.output().contains("[DIRECTORY]"));
     }

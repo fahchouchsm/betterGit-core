@@ -179,6 +179,26 @@ class InitCommandTest {
     }
 
     @Test
+    void existingAiConfigurationOffersReconfigurationAndPromptsForAReplacementKey() throws Exception {
+        createJavaProject();
+        Files.writeString(projectPath.resolve(".env"), """
+                AI_API_KEY=old-key
+                AI_API_MODEL=old-model
+                AI_API_URL=https://ai.example/generate
+                """);
+        RecordingConsole console = new RecordingConsole(
+                "", "", "", "y", "y", "", "replacement-key", "", "", "y");
+
+        initialize(new RecordingRepositoryAccess(true), console, Map.of(), successfulAi(), false);
+
+        assertTrue(console.prompts().contains("AI is configured for old-model. Reconfigure it?"));
+        assertTrue(console.prompts().stream().anyMatch(prompt -> prompt.startsWith("AI API key")));
+        String env = Files.readString(projectPath.resolve(".env"));
+        assertTrue(env.contains("AI_API_KEY=replacement-key"));
+        assertFalse(env.contains("AI_API_KEY=old-key"));
+    }
+
+    @Test
     void existingAiModelSkipsTheModelQuestion() throws Exception {
         RecordingConsole console = new RecordingConsole("y", "y", "n");
         Map<String, String> environment = Map.of("AI_API_MODEL", "configured-model");

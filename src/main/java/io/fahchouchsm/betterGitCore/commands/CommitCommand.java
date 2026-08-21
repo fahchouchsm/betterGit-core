@@ -14,12 +14,13 @@ import picocli.CommandLine.Parameters;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.Callable;
 
 @Command(
         name = "commit",
-        description = "Create a Git commit with an optional AI-generated report and message.",
+        description = "Create a Git commit documented by a concise AI-generated Markdown report.",
         mixinStandardHelpOptions = true,
         sortOptions = false,
         usageHelpAutoWidth = true)
@@ -32,7 +33,7 @@ public final class CommitCommand implements Callable<Integer> {
     private Path requestedDirectory;
 
     @Option(names = {"-m", "--message"}, paramLabel = "MESSAGE",
-            description = "Commit message. Overrides an AI-suggested message.")
+            description = "Commit message used when AI reporting is disabled or skipped with --no-ai.")
     private String explicitMessage;
 
     @Option(names = "--no-ai", description = "Skip AI report generation for this commit.")
@@ -44,7 +45,7 @@ public final class CommitCommand implements Callable<Integer> {
     }
 
     @Override
-    public Integer call() {
+    public Integer call() throws IOException {
         Path projectPath = ProjectDirectoryResolver.resolve(invocationDirectory, requestedDirectory);
         if (!Files.isDirectory(projectPath)) {
             dependencies.console().failure("Repository directory does not exist or is not a directory: " + projectPath);
@@ -53,8 +54,18 @@ public final class CommitCommand implements Callable<Integer> {
         return commit(projectPath);
     }
 
-    private int commit(Path projectPath) {
+    private int commit(Path projectPath) throws IOException {
         Optional<CommitReportOutcome> report = skipAi ? Optional.empty() : generateReport(projectPath);
+        if (nothingToCommit(report)) {
+            dependencies.console().info(
+                    "Nothing to commit: no staged changes were found. "
+                            + "Stage a non-ignored file with 'git add <path>' and try again.");
+            return CommandLine.ExitCode.OK;
+        }
+        if (requiredReportFailed(report)) {
+            dependencies.console().failure("Commit cancelled because its AI report could not be generated.");
+            return CommandLine.ExitCode.SOFTWARE;
+        }
         String commitMessage = commitMessage(report);
         if (commitMessage == null) {
             dependencies.console().failure(
@@ -67,19 +78,15 @@ public final class CommitCommand implements Callable<Integer> {
         return CommandLine.ExitCode.OK;
     }
 
-    private Optional<CommitReportOutcome> generateReport(Path projectPath) {
-        Optional<BetterGitConfiguration> storedConfiguration;
-        try {
-            storedConfiguration = dependencies.configurationLoader().load(projectPath);
-            if (storedConfiguration.isEmpty()) {
-                return Optional.empty();
-            }
-            return Optional.of(generateReport(projectPath, storedConfiguration.orElseThrow()));
-        } catch (IOException exception) {
-            dependencies.console().warning(
-                    "AI commit report skipped because local BetterGit context could not be read.");
+    private Optional<CommitReportOutcome> generateReport(Path projectPath) throws IOException {
+        Optional<BetterGitConfiguration> storedConfiguration =
+                dependencies.configurationLoader().load(projectPath);
+        if (storedConfiguration.isEmpty()) {
+            dependencies.console().warning("No BetterGit configuration found in " + projectPath
+                    + ". Run 'bettergit init " + projectPath + "' or pass an initialized directory.");
             return Optional.empty();
         }
+        return Optional.of(generateReport(projectPath, storedConfiguration.orElseThrow()));
     }
 
     private CommitReportOutcome generateReport(Path projectPath, BetterGitConfiguration configuration)
@@ -87,10 +94,9 @@ public final class CommitCommand implements Callable<Integer> {
         if (configuration.ai().commitReportEnabled()) {
             dependencies.fileStore().ensureReportsIgnored(projectPath);
         }
-        AiConfiguration aiConfiguration = dependencies.aiConfigurationLoader().load(
-                projectPath, dependencies.environment(), configuration.ai().model());
+        CommitConfiguration commitConfiguration = commitConfiguration(projectPath, configuration);
         CommitReportOutcome outcome = dependencies.reportGenerator().generate(new CommitReportRequest(
-                projectPath, configuration, aiConfiguration,
+                projectPath, commitConfiguration.betterGit(), commitConfiguration.ai(),
                 CommitReportLimits.fromEnvironment(dependencies.environment())));
         reportSkip(outcome.status());
         return outcome;
@@ -110,12 +116,16 @@ public final class CommitCommand implements Callable<Integer> {
     }
 
     private String commitMessage(Optional<CommitReportOutcome> report) {
+        Optional<String> generatedMessage = report
+                .filter(outcome -> outcome.status() == CommitReportStatus.GENERATED)
+                .map(CommitReportOutcome::commitMessage);
+        if (generatedMessage.isPresent()) {
+            return generatedMessage.orElseThrow();
+        }
         if (explicitMessage != null && !explicitMessage.isBlank()) {
             return explicitMessage.strip();
         }
-        return report.filter(outcome -> outcome.status() == CommitReportStatus.GENERATED)
-                .map(CommitReportOutcome::suggestedCommitMessage)
-                .orElse(null);
+        return null;
     }
 
     private void finalizeReport(
@@ -142,10 +152,39 @@ public final class CommitCommand implements Callable<Integer> {
     private void finalizeHistory(Path projectPath, CommitReportOutcome report, String commitHash) {
         try {
             dependencies.memoryStore().finalizePendingHistory(
-                    projectPath, report.suggestedCommitMessage(), commitHash);
+                    projectPath, report.commitMessage(), commitHash);
         } catch (IOException exception) {
             dependencies.console().warning(
                     "The report was saved, but BetterGit recent history could not be updated.");
         }
+    }
+
+    private CommitConfiguration commitConfiguration(
+            Path projectPath, BetterGitConfiguration configuration) throws IOException {
+        AiConfiguration loadedAi = dependencies.aiConfigurationLoader().load(
+                projectPath, dependencies.environment(), configuration.ai().model());
+        AiConfiguration completedAi = configuration.ai().commitReportEnabled() && !loadedAi.isComplete()
+                ? dependencies.aiSetupService().complete(projectPath, loadedAi, dependencies.console())
+                : loadedAi;
+        if (!completedAi.isComplete() || Objects.equals(configuration.ai().model(), completedAi.model())) {
+            return new CommitConfiguration(configuration, completedAi);
+        }
+        BetterGitConfiguration updated = configuration.withAiModel(completedAi.model());
+        dependencies.fileStore().writeConfiguration(projectPath, updated);
+        return new CommitConfiguration(updated, completedAi);
+    }
+
+    private static boolean requiredReportFailed(Optional<CommitReportOutcome> report) {
+        return report.filter(outcome -> outcome.status() != CommitReportStatus.DISABLED)
+                .filter(outcome -> outcome.status() != CommitReportStatus.GENERATED)
+                .isPresent();
+    }
+
+    private static boolean nothingToCommit(Optional<CommitReportOutcome> report) {
+        return report.filter(outcome -> outcome.status() == CommitReportStatus.NO_MEANINGFUL_CHANGES)
+                .isPresent();
+    }
+
+    private record CommitConfiguration(BetterGitConfiguration betterGit, AiConfiguration ai) {
     }
 }

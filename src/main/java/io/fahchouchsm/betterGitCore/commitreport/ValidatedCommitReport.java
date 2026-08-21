@@ -4,8 +4,7 @@ import java.util.List;
 
 public record ValidatedCommitReport(
         String markdown,
-        String suggestedCommitMessage,
-        String summary,
+        String commitMessage,
         List<String> changedAreas) {
 
     public ValidatedCommitReport {

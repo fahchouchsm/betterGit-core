@@ -78,7 +78,7 @@ public final class AiCommitReportGenerator {
                 .savePending(attempt.request().projectPath(), createdAt, report.markdown());
         updateHistory(attempt, createdAt, report);
         return CommitReportOutcome.generated(
-                reportPath, report.suggestedCommitMessage(), attempt.prompt());
+                reportPath, report.commitMessage(), attempt.prompt());
     }
 
     private void updateHistory(GenerationAttempt attempt, Instant createdAt, ValidatedCommitReport report)
@@ -90,7 +90,7 @@ public final class AiCommitReportGenerator {
                 ? attempt.context().changedFiles().stream().map(ChangedFile::path).toList()
                 : report.changedAreas();
         dependencies.memoryStore().appendHistory(attempt.request().projectPath(), new HistoryEntry(
-                "pending", createdAt, report.suggestedCommitMessage(), changedAreas, report.summary()));
+                "pending", createdAt, report.commitMessage(), changedAreas, report.commitMessage()));
     }
 
     private record GenerationAttempt(

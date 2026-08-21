@@ -108,7 +108,8 @@ class AiCommitReportGeneratorTest {
                 +String apiKey=secret-api-key;
                 +String password="a secret with spaces";
                 """;
-        RecordingAi ai = new RecordingAi(validReport().replace("No known risks.", "secret-api-key"));
+        RecordingAi ai = new RecordingAi(
+                validReport().replace("Validation was not run or provided.", "secret-api-key"));
 
         CommitReportOutcome outcome = generator(new RecordingCommitSource(snapshot(diff)), ai)
                 .generate(request(enabledSettings(false), COMPLETE_AI, CommitReportLimits.DEFAULT_MAXIMUM));
@@ -165,8 +166,9 @@ class AiCommitReportGeneratorTest {
 
         assertEquals(CommitReportStatus.GENERATED, successful.status());
         assertTrue(successful.reportPath().getFileName().toString().startsWith("pending-"));
-        assertTrue(Files.readString(successful.reportPath()).startsWith("# Commit Report"));
-        assertEquals("feat(core): add report generation", successful.suggestedCommitMessage());
+        assertTrue(Files.readString(successful.reportPath())
+                .startsWith("Adds concise documentation for staged changes.\n\n## Changes"));
+        assertEquals("Adds concise documentation for staged changes.", successful.commitMessage());
         assertEquals(CommitReportStatus.AI_REQUEST_FAILED, failed.status());
     }
 
@@ -229,25 +231,13 @@ class AiCommitReportGeneratorTest {
 
     private static String validReport() {
         return """
-                # Commit Report
+                Adds concise documentation for staged changes.
 
-                ## Suggested commit message
-                feat(core): add report generation
-
-                ## Summary
-                Adds evidence-based commit reporting.
-
-                ## Changed areas
+                ## Changes
                 - src/App.java: report flow
 
-                ## Technical details
-                - Uses staged changes.
-
                 ## Validation
-                - Validation was not run or provided.
-
-                ## Risks or follow-up
-                - No known risks.
+                Validation was not run or provided.
                 """;
     }
 

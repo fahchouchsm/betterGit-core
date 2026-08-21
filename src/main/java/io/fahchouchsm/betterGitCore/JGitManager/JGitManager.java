@@ -55,7 +55,7 @@ public final class JGitManager {
      */
     public GitChanges getChangesBeforeCommit(Path projectPath) {
         Path repositoryPath = requireDirectory(projectPath);
-        try (Git git = Git.open(repositoryPath.toFile())) {
+        try (Git git = openContainingRepository(repositoryPath)) {
             Status status = git.status().call();
             return new GitChanges(
                     status.getAdded(),
@@ -80,7 +80,7 @@ public final class JGitManager {
      */
     public GitChangeDetails getChangeDetailsBeforeCommit(Path projectPath) {
         Path repositoryPath = requireDirectory(projectPath);
-        try (Git git = Git.open(repositoryPath.toFile())) {
+        try (Git git = openContainingRepository(repositoryPath)) {
             return new GitChangeDetails(createStagedDiff(git), createUnstagedDiff(git));
         } catch (RepositoryNotFoundException exception) {
             throw new GitRepositoryNotFoundException("Not a Git repository: " + repositoryPath, exception);
@@ -106,7 +106,7 @@ public final class JGitManager {
 
     public String getCurrentBranch(Path projectPath) {
         Path repositoryPath = requireDirectory(projectPath);
-        try (Git git = Git.open(repositoryPath.toFile())) {
+        try (Git git = openContainingRepository(repositoryPath)) {
             return git.getRepository().getBranch();
         } catch (RepositoryNotFoundException exception) {
             throw new GitRepositoryNotFoundException("Not a Git repository: " + repositoryPath, exception);
@@ -120,7 +120,7 @@ public final class JGitManager {
         if (message == null || message.isBlank()) {
             throw new IllegalArgumentException("Commit message must not be blank.");
         }
-        try (Git git = Git.open(repositoryPath.toFile())) {
+        try (Git git = openContainingRepository(repositoryPath)) {
             return git.commit().setMessage(message.strip()).call().name();
         } catch (EmptyCommitException exception) {
             throw new GitNoStagedChangesException("No staged changes are available to commit.");
@@ -153,6 +153,15 @@ public final class JGitManager {
             git.diff().setCached(false).setOutputStream(output).call();
             return output.toString(StandardCharsets.UTF_8);
         }
+    }
+
+    private Git openContainingRepository(Path repositoryPath) throws IOException {
+        FileRepositoryBuilder repositoryBuilder = new FileRepositoryBuilder();
+        repositoryBuilder.findGitDir(repositoryPath.toFile());
+        if (repositoryBuilder.getGitDir() == null) {
+            throw new RepositoryNotFoundException(repositoryPath.toFile());
+        }
+        return Git.wrap(repositoryBuilder.build());
     }
 
     private Path requireDirectory(Path projectPath) {

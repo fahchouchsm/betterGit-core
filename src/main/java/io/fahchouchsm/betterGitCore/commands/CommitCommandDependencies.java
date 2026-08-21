@@ -5,6 +5,7 @@ import io.fahchouchsm.betterGitCore.commitreport.AiCommitReportGenerator;
 import io.fahchouchsm.betterGitCore.commitreport.AiMemoryStore;
 import io.fahchouchsm.betterGitCore.commitreport.CommitReportStore;
 import io.fahchouchsm.betterGitCore.configuration.AiConfigurationLoader;
+import io.fahchouchsm.betterGitCore.configuration.AiSetupService;
 import io.fahchouchsm.betterGitCore.configuration.BetterGitConfigurationLoader;
 import io.fahchouchsm.betterGitCore.configuration.BetterGitFileStore;
 
@@ -17,6 +18,7 @@ record CommitCommandDependencies(
         AiMemoryStore memoryStore,
         BetterGitConfigurationLoader configurationLoader,
         AiConfigurationLoader aiConfigurationLoader,
+        AiSetupService aiSetupService,
         BetterGitFileStore fileStore,
         ConsolePort console,
         Map<String, String> environment) {

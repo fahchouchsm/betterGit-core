@@ -70,6 +70,26 @@ class AiSetupServiceTest {
     }
 
     @Test
+    void reconfiguringTheSameServicePromptsForAndStoresAReplacementKey() throws Exception {
+        AiConfiguration current = new AiConfiguration(
+                AiProvider.OPENAI_COMPATIBLE,
+                "old-openai-key",
+                "openai-model",
+                "https://api.openai.com/v1/chat/completions");
+
+        AiConfiguration configured = service((provider, endpoint, apiKey) -> List.of()).configure(
+                projectPath,
+                current,
+                console("y\n1\nreplacement-key\nn\n\n"));
+
+        assertEquals("replacement-key", configured.apiKey());
+        assertEquals("openai-model", configured.model());
+        String env = Files.readString(projectPath.resolve(".env"));
+        assertTrue(env.contains("AI_API_KEY=replacement-key"));
+        assertFalse(env.contains("old-openai-key"));
+    }
+
+    @Test
     void rejectsAnInvalidCustomEndpointWithoutWritingCredentials() throws Exception {
         AiConfiguration current = new AiConfiguration((AiProvider) null, null, null, null);
 

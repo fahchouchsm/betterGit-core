@@ -73,8 +73,8 @@ public final class CommandRunner {
         AiCommitReportGenerator reportGenerator = reportGenerator(runtime, services);
         CommitCommandDependencies commitDependencies = new CommitCommandDependencies(
                 runtime.commitExecutor(), reportGenerator, services.reportStore(), services.memoryStore(),
-                services.configurationLoader(), services.aiConfigurationLoader(), services.fileStore(),
-                runtime.console(), runtime.environment());
+                services.configurationLoader(), services.aiConfigurationLoader(), services.aiSetupService(),
+                services.fileStore(), runtime.console(), runtime.environment());
         AiSetupCommandDependencies aiSetupDependencies = new AiSetupCommandDependencies(
                 services.aiConfigurationLoader(), services.aiSetupService(), services.configurationLoader(),
                 services.fileStore(), runtime.console(), runtime.environment());

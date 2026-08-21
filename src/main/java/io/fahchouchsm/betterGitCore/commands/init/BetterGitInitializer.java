@@ -184,8 +184,9 @@ public final class BetterGitInitializer {
         if (!enabled) {
             return new AiSetup(configuration, AiCommitSettings.disabled(configuration.model()));
         }
-        AiConfiguration completedConfiguration = dependencies.aiSetupService()
-                .complete(projectPath, configuration, console);
+        AiConfiguration completedConfiguration = configuration.isComplete()
+                ? dependencies.aiSetupService().configure(projectPath, configuration, console)
+                : dependencies.aiSetupService().complete(projectPath, configuration, console);
         String model = configuredModel(console, completedConfiguration.model());
         boolean memoryEnabled = console.confirm(
                 "Maintain local BetterGit AI memory/context?", ConfirmationDefault.YES);
