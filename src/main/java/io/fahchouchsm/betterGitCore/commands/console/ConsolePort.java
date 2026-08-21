@@ -12,6 +12,8 @@ public interface ConsolePort {
 
     boolean confirm(String question, ConfirmationDefault defaultChoice) throws IOException;
 
+    int chooseOne(String question, List<String> choices, int defaultChoice) throws IOException;
+
     List<Boolean> chooseMany(String question, List<String> choices) throws IOException;
 
     PrintWriter out();

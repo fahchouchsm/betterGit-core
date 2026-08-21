@@ -11,6 +11,7 @@ import java.util.Set;
 
 public final class AiCredentialStore {
     private static final List<String> SETTING_ORDER = List.of(
+            AiConfigurationLoader.API_PROVIDER,
             AiConfigurationLoader.API_KEY,
             AiConfigurationLoader.API_MODEL,
             AiConfigurationLoader.API_URL);

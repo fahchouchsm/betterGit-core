@@ -160,7 +160,7 @@ class InitCommandTest {
     @Test
     void configuresAiCommitReportsWithoutPersistingASecret() throws Exception {
         RecordingConsole console = new RecordingConsole(
-                "y", "y", "y", "secret-api-key", "selected-model", "", "yes");
+                "y", "y", "y", "2", "secret-api-key", "n", "selected-model", "yes");
 
         initialize(new RecordingRepositoryAccess(true), console, Map.of(), successfulAi(), false);
 

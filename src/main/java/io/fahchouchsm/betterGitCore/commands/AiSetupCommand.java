@@ -47,7 +47,8 @@ public final class AiSetupCommand implements Callable<Integer> {
                 .map(ai -> ai.model()).orElse(null);
         AiConfiguration current = dependencies.aiConfigurationLoader().load(
                 projectPath, dependencies.environment(), configuredModel);
-        AiConfiguration configured = dependencies.setupService().complete(projectPath, current, dependencies.console());
+        AiConfiguration configured = dependencies.setupService().configure(
+                projectPath, current, dependencies.console());
         if (configured.isComplete() && stored.isPresent()) {
             dependencies.fileStore().writeConfiguration(projectPath,
                     stored.orElseThrow().withAiModel(configured.model()));

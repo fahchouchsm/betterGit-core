@@ -191,7 +191,8 @@ public final class BetterGitInitializer {
                 "Maintain local BetterGit AI memory/context?", ConfirmationDefault.YES);
         return new AiSetup(
                 new AiConfiguration(
-                        completedConfiguration.apiKey(), model, completedConfiguration.apiUrl()),
+                        completedConfiguration.provider(), completedConfiguration.apiKey(),
+                        model, completedConfiguration.apiUrl()),
                 new AiCommitSettings(true, memoryEnabled, model));
     }
 

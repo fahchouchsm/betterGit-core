@@ -43,6 +43,22 @@ final class RecordingConsole implements ConsolePort {
     }
 
     @Override
+    public int chooseOne(String question, List<String> choices, int defaultChoice) {
+        prompts.add(question);
+        if (answers.isEmpty() || answers.peek().isBlank()) {
+            if (!answers.isEmpty()) {
+                answers.remove();
+            }
+            return defaultChoice;
+        }
+        int selected = Integer.parseInt(answers.remove()) - 1;
+        if (selected < 0 || selected >= choices.size()) {
+            throw new IllegalArgumentException("Recorded choice is outside the menu.");
+        }
+        return selected;
+    }
+
+    @Override
     public List<Boolean> chooseMany(String question, List<String> choices) {
         prompts.add(question);
         List<Boolean> selections = new ArrayList<>(choices.size());

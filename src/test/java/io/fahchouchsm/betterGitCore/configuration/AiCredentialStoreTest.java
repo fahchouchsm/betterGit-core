@@ -24,7 +24,7 @@ class AiCredentialStoreTest {
 
         new AiCredentialStore().update(projectPath, Map.of(
                 "AI_API_MODEL", "gemini-2.5-flash",
-                "AI_API_URL", AiSetupService.DEFAULT_GEMINI_URL));
+                "AI_API_URL", "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"));
 
         String stored = Files.readString(envFile);
         assertTrue(stored.contains("APP_MODE=dev"));

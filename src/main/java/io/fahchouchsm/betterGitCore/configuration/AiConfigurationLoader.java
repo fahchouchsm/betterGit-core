@@ -11,6 +11,7 @@ public final class AiConfigurationLoader {
     static final String API_KEY = "AI_API_KEY";
     static final String API_MODEL = "AI_API_MODEL";
     static final String API_URL = "AI_API_URL";
+    static final String API_PROVIDER = "AI_API_PROVIDER";
 
     public AiConfiguration load(Path projectPath, Map<String, String> environment) throws IOException {
         return load(projectPath, environment, null);
@@ -19,10 +20,12 @@ public final class AiConfigurationLoader {
     public AiConfiguration load(
             Path projectPath, Map<String, String> environment, String configuredModel) throws IOException {
         Map<String, String> fileSettings = readEnvFile(projectPath.resolve(".env"));
+        String apiUrl = preferredValue(API_URL, environment, fileSettings);
         return new AiConfiguration(
+                AiProvider.configured(preferredValue(API_PROVIDER, environment, fileSettings), apiUrl),
                 preferredValue(API_KEY, environment, fileSettings),
                 preferredModel(environment, fileSettings, configuredModel),
-                preferredValue(API_URL, environment, fileSettings));
+                apiUrl);
     }
 
     private static String preferredModel(
@@ -57,7 +60,8 @@ public final class AiConfigurationLoader {
             return;
         }
         String settingName = trimmedLine.substring(0, separator).trim();
-        if (API_KEY.equals(settingName) || API_MODEL.equals(settingName) || API_URL.equals(settingName)) {
+        if (API_KEY.equals(settingName) || API_MODEL.equals(settingName)
+                || API_URL.equals(settingName) || API_PROVIDER.equals(settingName)) {
             settings.put(settingName, unquote(trimmedLine.substring(separator + 1).trim()));
         }
     }

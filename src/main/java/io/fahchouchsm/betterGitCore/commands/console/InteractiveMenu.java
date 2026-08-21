@@ -27,6 +27,12 @@ final class InteractiveMenu {
         return selection.getFirst();
     }
 
+    int chooseOne(String question, List<String> choices, int defaultChoice) throws IOException {
+        List<Boolean> selection = run(
+                new MenuView(question, choices, SelectionMode.SINGLE), defaultChoice);
+        return selection.indexOf(true);
+    }
+
     List<Boolean> chooseMany(String question, List<String> choices) throws IOException {
         return run(new MenuView(question, choices, SelectionMode.MULTIPLE), 0);
     }
@@ -111,9 +117,16 @@ final class InteractiveMenu {
         terminal.writer().println();
         terminal.writer().println("  " + menu.question());
         terminal.writer().println();
-        for (int index = 0; index < menu.choices().size(); index++) {
+        IndexWindow window = visibleWindow(terminal, menu, state);
+        if (window.first() > 0) {
+            terminal.writer().println("    ↑ " + window.first() + " more");
+        }
+        for (int index = window.first(); index < window.lastExclusive(); index++) {
             terminal.writer().println("  " + choiceLine(
                     menu.choices().get(index), state, index, menu.mode()));
+        }
+        if (window.lastExclusive() < menu.choices().size()) {
+            terminal.writer().println("    ↓ " + (menu.choices().size() - window.lastExclusive()) + " more");
         }
         terminal.writer().println();
         terminal.writer().println("  " + instruction(menu.mode()));
@@ -127,7 +140,15 @@ final class InteractiveMenu {
     }
 
     private static int dividerWidth(Terminal terminal) {
-        return Math.max(20, Math.min(60, terminal.getWidth() - 4));
+        return Math.max(20, Math.min(60, terminal.getSize().getColumns() - 4));
+    }
+
+    private static IndexWindow visibleWindow(Terminal terminal, MenuView menu, MenuState state) {
+        int availableRows = Math.max(3, terminal.getSize().getRows() - 10);
+        int visibleChoices = Math.min(availableRows, menu.choices().size());
+        int first = Math.max(0, state.cursor() - visibleChoices / 2);
+        first = Math.min(first, menu.choices().size() - visibleChoices);
+        return new IndexWindow(first, first + visibleChoices);
     }
 
     private static String instruction(SelectionMode mode) {
@@ -153,6 +174,9 @@ final class InteractiveMenu {
     }
 
     private record MenuView(String question, List<String> choices, SelectionMode mode) {
+    }
+
+    private record IndexWindow(int first, int lastExclusive) {
     }
 
     private enum SelectionMode {
@@ -193,6 +217,10 @@ final class InteractiveMenu {
 
         private boolean selectedAt(int index) {
             return selected[index];
+        }
+
+        private int cursor() {
+            return cursor;
         }
     }
 }

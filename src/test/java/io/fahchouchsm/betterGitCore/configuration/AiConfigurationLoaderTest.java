@@ -19,10 +19,12 @@ class AiConfigurationLoaderTest {
     @Test
     void loadsApiSettingsFromEnvironment() throws Exception {
         AiConfiguration configuration = loader.load(projectPath, Map.of(
+                "AI_API_PROVIDER", "anthropic",
                 "AI_API_KEY", "environment-key",
                 "AI_API_MODEL", "environment-model",
                 "AI_API_URL", "https://environment.example/api"));
 
+        assertEquals(AiProvider.ANTHROPIC, configuration.provider());
         assertEquals("environment-key", configuration.apiKey());
         assertEquals("environment-model", configuration.model());
         assertEquals("https://environment.example/api", configuration.apiUrl());
@@ -32,12 +34,14 @@ class AiConfigurationLoaderTest {
     void loadsApiSettingsFromProjectEnvFile() throws Exception {
         Files.writeString(projectPath.resolve(".env"), """
                 AI_API_KEY="file-key"
+                AI_API_PROVIDER=gemini
                 AI_API_MODEL=file-model
                 AI_API_URL='https://file.example/api'
                 """);
 
         AiConfiguration configuration = loader.load(projectPath, Map.of());
 
+        assertEquals(AiProvider.GEMINI, configuration.provider());
         assertEquals("file-key", configuration.apiKey());
         assertEquals("file-model", configuration.model());
         assertEquals("https://file.example/api", configuration.apiUrl());

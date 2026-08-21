@@ -5,10 +5,15 @@ import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 
 /** AI credentials and endpoint settings held in memory only. */
-public record AiConfiguration(String apiKey, String model, String apiUrl) {
+public record AiConfiguration(AiProvider provider, String apiKey, String model, String apiUrl) {
+    public AiConfiguration(String apiKey, String model, String apiUrl) {
+        this(AiProvider.configured(null, apiUrl), apiKey, model, apiUrl);
+    }
+
     @Override
     public String toString() {
-        return "AiConfiguration[apiKeyConfigured=" + hasApiKey()
+        return "AiConfiguration[provider=" + provider
+                + ", apiKeyConfigured=" + hasApiKey()
                 + ", modelConfigured=" + hasText(model)
                 + ", apiUrlConfigured=" + hasText(apiUrl) + "]";
     }
@@ -18,7 +23,7 @@ public record AiConfiguration(String apiKey, String model, String apiUrl) {
     }
 
     public boolean isComplete() {
-        return hasApiKey() && hasText(model) && validEndpoint();
+        return provider != null && hasApiKey() && hasText(model) && validEndpoint();
     }
 
     public URI resolvedEndpoint() {

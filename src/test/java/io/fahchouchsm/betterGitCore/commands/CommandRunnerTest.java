@@ -125,12 +125,14 @@ class CommandRunnerTest {
 
     @Test
     void guidedAiSetupMasksAndStoresLocalConfiguration() throws Exception {
-        RecordingConsole console = new RecordingConsole("y", "local-secret-key", "", "");
+        RecordingConsole console = new RecordingConsole(
+                "2", "local-secret-key", "n", "gemini-2.5-flash");
 
         int exitCode = execute(console, new TestRepository(true), "ai", "setup");
 
         assertEquals(CommandLine.ExitCode.OK, exitCode);
         assertTrue(Files.readString(projectPath.resolve(".env")).contains("AI_API_KEY=local-secret-key"));
+        assertTrue(Files.readString(projectPath.resolve(".env")).contains("AI_API_PROVIDER=gemini"));
         assertTrue(Files.readString(projectPath.resolve(".env")).contains("AI_API_MODEL=gemini-2.5-flash"));
         assertTrue(Files.readString(projectPath.resolve(".gitignore")).contains(".env"));
         assertFalse(console.output().contains("local-secret-key"));

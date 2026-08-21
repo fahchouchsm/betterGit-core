@@ -78,6 +78,18 @@ public final class SystemConsoleAdapter implements ConsolePort {
     }
 
     @Override
+    public int chooseOne(String question, List<String> choices, int defaultChoice) throws IOException {
+        if (terminalInteraction == TerminalInteraction.INTERACTIVE) {
+            return new InteractiveMenu().chooseOne(question, choices, defaultChoice);
+        }
+        output.println(question);
+        for (int index = 0; index < choices.size(); index++) {
+            output.println("  " + (index + 1) + ") " + choices.get(index));
+        }
+        return readChoice(choices.size(), defaultChoice);
+    }
+
+    @Override
     public List<Boolean> chooseMany(String question, List<String> choices) throws IOException {
         if (terminalInteraction == TerminalInteraction.INTERACTIVE) {
             return new InteractiveMenu().chooseMany(question, choices);
@@ -150,6 +162,24 @@ public final class SystemConsoleAdapter implements ConsolePort {
                 return false;
             }
             warning("Please answer y, yes, n, or no.");
+        }
+    }
+
+    private int readChoice(int choiceCount, int defaultChoice) throws IOException {
+        while (true) {
+            String answer = readLine("Choose [" + (defaultChoice + 1) + "]: ").trim();
+            if (answer.isEmpty()) {
+                return defaultChoice;
+            }
+            try {
+                int selected = Integer.parseInt(answer) - 1;
+                if (selected >= 0 && selected < choiceCount) {
+                    return selected;
+                }
+            } catch (NumberFormatException ignored) {
+                // The validation message below applies to non-numeric and out-of-range input.
+            }
+            warning("Choose a number from 1 to " + choiceCount + ".");
         }
     }
 

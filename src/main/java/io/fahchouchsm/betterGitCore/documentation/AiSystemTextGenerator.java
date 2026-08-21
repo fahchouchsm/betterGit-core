@@ -9,6 +9,6 @@ import java.io.IOException;
 public final class AiSystemTextGenerator implements AiTextGenerator {
     @Override
     public String generate(AiConfiguration configuration, String prompt) throws IOException, InterruptedException {
-        return new AiSystem(configuration.apiKey(), configuration.resolvedEndpoint()).generate(prompt);
+        return new AiSystem(configuration).generate(prompt);
     }
 }
