@@ -2,7 +2,10 @@ package io.fahchouchsm.betterGitCore.commitreport;
 
 import org.junit.jupiter.api.Test;
 
+import java.util.List;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -73,5 +76,30 @@ class CommitReportValidatorTest {
         assertThrows(IllegalArgumentException.class, () -> validator.validate(overlongDescription));
         assertThrows(IllegalArgumentException.class, () -> validator.validate(tooManyChanges));
         assertThrows(IllegalArgumentException.class, () -> validator.validate(multipleValidationParagraphs));
+    }
+
+    @Test
+    void acceptsAndNormalizesStandardMarkdownBulletMarkers() {
+        String response = """
+                Refactor Blackjack game structure, add game controller and view.
+
+                ## Changes
+                *   Added a game controller.
+                + Added a console view.
+                - Moved card classes into the model package.
+
+                ## Validation
+                Validation was not run or provided.
+                """;
+
+        ValidatedCommitReport report = validator.validate(response);
+
+        assertEquals(List.of(
+                "Added a game controller.",
+                "Added a console view.",
+                "Moved card classes into the model package."), report.changedAreas());
+        assertTrue(report.markdown().contains("- Added a game controller."));
+        assertFalse(report.markdown().contains("*   Added"));
+        assertFalse(report.markdown().contains("+ Added"));
     }
 }

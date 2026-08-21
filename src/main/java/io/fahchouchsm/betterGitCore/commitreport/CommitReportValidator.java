@@ -2,6 +2,8 @@ package io.fahchouchsm.betterGitCore.commitreport;
 
 import java.util.Arrays;
 import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public final class CommitReportValidator {
     private static final int MAXIMUM_DESCRIPTION_CHARACTERS = 160;
@@ -11,6 +13,7 @@ public final class CommitReportValidator {
     private static final String VALIDATION_HEADING = "## Validation";
     private static final String CHANGES_MARKER = "\n" + CHANGES_HEADING + "\n";
     private static final String VALIDATION_MARKER = "\n" + VALIDATION_HEADING + "\n";
+    private static final Pattern CHANGE_BULLET = Pattern.compile("[-*+]\\s+(\\S.*)");
     private static final List<String> HEADINGS = List.of(
             CHANGES_HEADING,
             VALIDATION_HEADING);
@@ -64,11 +67,18 @@ public final class CommitReportValidator {
                 .map(String::strip)
                 .filter(line -> !line.isBlank())
                 .toList();
-        if (lines.isEmpty() || lines.size() > MAXIMUM_CHANGED_AREAS
-                || lines.stream().anyMatch(line -> !line.startsWith("- ") || line.substring(2).isBlank())) {
+        if (lines.isEmpty() || lines.size() > MAXIMUM_CHANGED_AREAS) {
             throw new IllegalArgumentException("AI commit report must contain one to five change bullets.");
         }
-        return lines.stream().map(line -> line.substring(2).strip()).toList();
+        return lines.stream().map(CommitReportValidator::normalizedChangeArea).toList();
+    }
+
+    private static String normalizedChangeArea(String line) {
+        Matcher bullet = CHANGE_BULLET.matcher(line);
+        if (!bullet.matches()) {
+            throw new IllegalArgumentException("AI commit report must contain one to five change bullets.");
+        }
+        return bullet.group(1).strip();
     }
 
     private static String normalizedValidation(String validation) {
