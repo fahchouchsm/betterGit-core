@@ -9,6 +9,7 @@ import io.fahchouchsm.betterGitCore.configuration.AiSetupService;
 import io.fahchouchsm.betterGitCore.configuration.BetterGitConfigurationLoader;
 import io.fahchouchsm.betterGitCore.configuration.BetterGitFileStore;
 import io.fahchouchsm.betterGitCore.diagram.CommitDiagramService;
+import io.fahchouchsm.betterGitCore.testduration.TestDurationService;
 
 import java.util.Map;
 
@@ -16,6 +17,7 @@ record CommitCommandDependencies(
         CommitExecutor commitExecutor,
         AiCommitReportGenerator reportGenerator,
         CommitDiagramService diagramService,
+        TestDurationService testDurationService,
         CommitReportStore reportStore,
         AiMemoryStore memoryStore,
         BetterGitConfigurationLoader configurationLoader,

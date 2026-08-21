@@ -90,13 +90,18 @@ public final class SystemConsoleAdapter implements ConsolePort {
     }
 
     @Override
-    public List<Boolean> chooseMany(String question, List<String> choices) throws IOException {
+    public List<Boolean> chooseMany(
+            String question, List<String> choices, List<Boolean> initialSelections) throws IOException {
         if (terminalInteraction == TerminalInteraction.INTERACTIVE) {
-            return new InteractiveMenu().chooseMany(question, choices);
+            return new InteractiveMenu().chooseMany(question, choices, initialSelections);
         }
         List<Boolean> selections = new ArrayList<>(choices.size());
-        for (String choice : choices) {
-            selections.add(readConfirmation(choice + " [y/N]: ", ConfirmationDefault.NO));
+        for (int index = 0; index < choices.size(); index++) {
+            ConfirmationDefault defaultChoice = initialSelections.get(index)
+                    ? ConfirmationDefault.YES
+                    : ConfirmationDefault.NO;
+            String suffix = defaultChoice == ConfirmationDefault.YES ? " [Y/n]: " : " [y/N]: ";
+            selections.add(readConfirmation(choices.get(index) + suffix, defaultChoice));
         }
         return List.copyOf(selections);
     }

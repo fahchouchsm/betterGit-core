@@ -24,6 +24,7 @@ import io.fahchouchsm.betterGitCore.configuration.FeatureSettings;
 import io.fahchouchsm.betterGitCore.documentation.AiTextGenerator;
 import io.fahchouchsm.betterGitCore.diagram.ClassDiagramGenerator;
 import io.fahchouchsm.betterGitCore.diagram.CommitDiagramService;
+import io.fahchouchsm.betterGitCore.testduration.TestDurationService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import picocli.CommandLine;
@@ -209,6 +210,9 @@ class CommitCommandTest {
                 commits, generator,
                 new CommitDiagramService(diagramGenerator,
                         new BetterGitConfigurationLoader(), fileStore),
+                new TestDurationService(path -> {
+                    throw new AssertionError("disabled test-duration tracker was invoked");
+                }, new BetterGitConfigurationLoader(), fileStore),
                 reportStore, memoryStore, new BetterGitConfigurationLoader(),
                 new AiConfigurationLoader(), new AiSetupService(fileStore, new AiCredentialStore()),
                 fileStore, console, environment);

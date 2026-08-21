@@ -43,6 +43,20 @@ class SystemConsoleAdapterTest {
         assertFalse(noByDefault.console().confirm("Continue?", ConfirmationDefault.NO));
     }
 
+    @Test
+    void redirectedFeatureSelectionPreservesCurrentSettingsByDefault() throws Exception {
+        ConsoleFixture fixture = consoleWithInput("\n\n\n");
+
+        List<Boolean> selections = fixture.console().chooseMany(
+                "Choose features",
+                List.of("First", "Second", "Third"),
+                List.of(true, false, true));
+
+        assertEquals(List.of(true, false, true), selections);
+        assertTrue(fixture.output().toString().contains("First [Y/n]:"));
+        assertTrue(fixture.output().toString().contains("Second [y/N]:"));
+    }
+
     private static ConsoleFixture consoleWithInput(String answers) {
         ByteArrayInputStream input = new ByteArrayInputStream(answers.getBytes(StandardCharsets.UTF_8));
         StringWriter output = new StringWriter();

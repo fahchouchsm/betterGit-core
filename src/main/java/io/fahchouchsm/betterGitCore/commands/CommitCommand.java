@@ -7,6 +7,9 @@ import io.fahchouchsm.betterGitCore.commitreport.CommitReportStatus;
 import io.fahchouchsm.betterGitCore.configuration.AiConfiguration;
 import io.fahchouchsm.betterGitCore.configuration.BetterGitConfiguration;
 import io.fahchouchsm.betterGitCore.diagram.CommitDiagramPlan;
+import io.fahchouchsm.betterGitCore.testduration.TestDurationPlan;
+import io.fahchouchsm.betterGitCore.testduration.TestDurationService;
+import io.fahchouchsm.betterGitCore.testduration.TestSuiteFailedException;
 import picocli.CommandLine;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
@@ -77,7 +80,35 @@ public final class CommitCommand implements Callable<Integer> {
         dependencies.console().success("Committed " + commitHash.substring(0, 8) + " · " + commitMessage);
         finalizeReport(projectPath, report, commitHash);
         generateDiagram(projectPath, commitHash);
+        trackTestDuration(projectPath, commitHash);
         return CommandLine.ExitCode.OK;
+    }
+
+    private void trackTestDuration(Path projectPath, String commitHash) {
+        try {
+            trackTestDurationIfEnabled(projectPath, commitHash);
+        } catch (TestSuiteFailedException exception) {
+            dependencies.console().warning("Tests failed after "
+                    + TestDurationService.readableDuration(exception.duration())
+                    + "; duration saved: " + exception.reportPath());
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            dependencies.console().warning("Commit succeeded, but test-duration tracking was interrupted.");
+        } catch (IOException exception) {
+            dependencies.console().warning(
+                    "Commit succeeded, but test duration could not be tracked: " + exception.getMessage());
+        }
+    }
+
+    private void trackTestDurationIfEnabled(Path projectPath, String commitHash)
+            throws IOException, InterruptedException, TestSuiteFailedException {
+        Optional<TestDurationPlan> plan = dependencies.testDurationService()
+                .planForCommit(projectPath, commitHash);
+        if (plan.isPresent()) {
+            TestDurationPlan enabledPlan = plan.orElseThrow();
+            dependencies.testDurationService().track(enabledPlan);
+            dependencies.console().success("Test duration saved: " + enabledPlan.outputFile());
+        }
     }
 
     private void generateDiagram(Path projectPath, String commitHash) {

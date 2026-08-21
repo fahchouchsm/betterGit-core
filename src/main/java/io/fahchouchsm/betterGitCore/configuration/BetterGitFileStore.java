@@ -48,6 +48,10 @@ public final class BetterGitFileStore {
         ensureIgnored(projectPath, ".bettergit/diagrams/", ".bettergit/diagrams/"::equals);
     }
 
+    public void ensureTestDurationsIgnored(Path projectPath) throws IOException {
+        ensureIgnored(projectPath, ".bettergit/test-durations/", ".bettergit/test-durations/"::equals);
+    }
+
     private void ensureIgnored(
             Path projectPath,
             String ignoredPattern,
