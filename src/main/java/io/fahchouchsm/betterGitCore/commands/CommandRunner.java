@@ -24,6 +24,8 @@ import io.fahchouchsm.betterGitCore.configuration.BetterGitConfigurationLoader;
 import io.fahchouchsm.betterGitCore.configuration.BetterGitFileStore;
 import io.fahchouchsm.betterGitCore.documentation.AiSystemTextGenerator;
 import io.fahchouchsm.betterGitCore.documentation.ProjectDocumentationGenerator;
+import io.fahchouchsm.betterGitCore.diagram.CommitDiagramService;
+import io.fahchouchsm.betterGitCore.diagram.java2diagram.Java2DiagramCliAdapter;
 import io.fahchouchsm.betterGitCore.project.JavaProjectDetector;
 import io.fahchouchsm.betterGitCore.project.MarkdownProjectScanner;
 import io.fahchouchsm.betterGitCore.history.GitHistoryReader;
@@ -108,9 +110,12 @@ public final class CommandRunner {
         BetterGitInitializer initializer = initializer(runtime, services);
         AiCommitReportGenerator reportGenerator = reportGenerator(runtime, services);
         CommitCommandDependencies commitDependencies = new CommitCommandDependencies(
-                runtime.commitExecutor(), reportGenerator, services.reportStore(), services.memoryStore(),
-                services.configurationLoader(), services.aiConfigurationLoader(), services.aiSetupService(),
-                services.fileStore(), runtime.console(), runtime.environment());
+                runtime.commitExecutor(), reportGenerator,
+                new CommitDiagramService(new Java2DiagramCliAdapter(),
+                        services.configurationLoader(), services.fileStore()),
+                services.reportStore(), services.memoryStore(), services.configurationLoader(),
+                services.aiConfigurationLoader(), services.aiSetupService(), services.fileStore(),
+                runtime.console(), runtime.environment());
         AiSetupCommandDependencies aiSetupDependencies = new AiSetupCommandDependencies(
                 services.aiConfigurationLoader(), services.aiSetupService(), services.configurationLoader(),
                 services.fileStore(), runtime.console(), runtime.environment());

@@ -7,6 +7,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.function.Predicate;
 
 /** Writes BetterGit project files without exposing secrets or partially replacing individual files. */
 public final class BetterGitFileStore {
@@ -40,16 +41,27 @@ public final class BetterGitFileStore {
     }
 
     public void ensureReportsIgnored(Path projectPath) throws IOException {
+        ensureIgnored(projectPath, ".bettergit/reports/", this::definesReportPolicy);
+    }
+
+    public void ensureDiagramsIgnored(Path projectPath) throws IOException {
+        ensureIgnored(projectPath, ".bettergit/diagrams/", ".bettergit/diagrams/"::equals);
+    }
+
+    private void ensureIgnored(
+            Path projectPath,
+            String ignoredPattern,
+            Predicate<String> definesPolicy) throws IOException {
         Path gitIgnore = projectPath.resolve(".gitignore");
         String existingContent = Files.isRegularFile(gitIgnore) ? Files.readString(gitIgnore) : "";
-        if (existingContent.lines().map(String::trim).anyMatch(this::definesReportPolicy)) {
+        if (existingContent.lines().map(String::trim).anyMatch(definesPolicy)) {
             return;
         }
         String separator = existingContent.isEmpty() || existingContent.endsWith("\n")
                 ? ""
                 : System.lineSeparator();
         AtomicFileWriter.write(gitIgnore,
-                existingContent + separator + ".bettergit/reports/" + System.lineSeparator());
+                existingContent + separator + ignoredPattern + System.lineSeparator());
     }
 
     public void prepareCommitReports(Path projectPath) throws IOException {

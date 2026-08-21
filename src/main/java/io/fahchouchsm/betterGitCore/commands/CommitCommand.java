@@ -6,6 +6,7 @@ import io.fahchouchsm.betterGitCore.commitreport.CommitReportRequest;
 import io.fahchouchsm.betterGitCore.commitreport.CommitReportStatus;
 import io.fahchouchsm.betterGitCore.configuration.AiConfiguration;
 import io.fahchouchsm.betterGitCore.configuration.BetterGitConfiguration;
+import io.fahchouchsm.betterGitCore.diagram.CommitDiagramPlan;
 import picocli.CommandLine;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
@@ -75,7 +76,27 @@ public final class CommitCommand implements Callable<Integer> {
         String commitHash = dependencies.commitExecutor().commit(projectPath, commitMessage);
         dependencies.console().success("Committed " + commitHash.substring(0, 8) + " · " + commitMessage);
         finalizeReport(projectPath, report, commitHash);
+        generateDiagram(projectPath, commitHash);
         return CommandLine.ExitCode.OK;
+    }
+
+    private void generateDiagram(Path projectPath, String commitHash) {
+        try {
+            Optional<CommitDiagramPlan> diagram = dependencies.diagramService()
+                    .planForCommit(projectPath, commitHash);
+            if (diagram.isPresent()) {
+                CommitDiagramPlan plan = diagram.orElseThrow();
+                dependencies.diagramService().generate(plan);
+                dependencies.console().success("Class diagram saved: " + plan.outputFile());
+            }
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            dependencies.console().warning(
+                    "Commit succeeded, but class-diagram generation was interrupted.");
+        } catch (IOException exception) {
+            dependencies.console().warning(
+                    "Commit succeeded, but its class diagram could not be generated: " + exception.getMessage());
+        }
     }
 
     private Optional<CommitReportOutcome> generateReport(Path projectPath) throws IOException {

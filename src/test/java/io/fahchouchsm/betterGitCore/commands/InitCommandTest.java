@@ -137,6 +137,8 @@ class InitCommandTest {
         assertTrue(settings.get("classDiagramOnCommit").getAsBoolean());
         assertFalse(settings.get("testDurationTracking").getAsBoolean());
         assertTrue(settings.get("sonarQubeDocumentation").getAsBoolean());
+        assertTrue(Files.isDirectory(projectPath.resolve(".bettergit/diagrams")));
+        assertTrue(Files.readString(projectPath.resolve(".gitignore")).contains(".bettergit/diagrams/"));
         assertEquals("2026-08-13T12:00:00Z", persisted.get("createdAt").getAsString());
         assertEquals(projectPath.toAbsolutePath().normalize().toString(), persisted.get("projectPath").getAsString());
         assertTrue(persisted.get("javaDetected").getAsBoolean());

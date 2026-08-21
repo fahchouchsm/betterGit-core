@@ -5,6 +5,7 @@ import io.fahchouchsm.betterGitCore.commands.console.ConfirmationDefault;
 import io.fahchouchsm.betterGitCore.configuration.AiCommitSettings;
 import io.fahchouchsm.betterGitCore.configuration.AiConfiguration;
 import io.fahchouchsm.betterGitCore.configuration.BetterGitConfiguration;
+import io.fahchouchsm.betterGitCore.configuration.BetterGitDirectories;
 import io.fahchouchsm.betterGitCore.configuration.FeatureSettings;
 import io.fahchouchsm.betterGitCore.documentation.DocumentationResult;
 import io.fahchouchsm.betterGitCore.documentation.DocumentationStatus;
@@ -101,6 +102,7 @@ public final class BetterGitInitializer {
                 projectPath, setup.configuration(), setup.documentation().content());
         console.diagnostic("Wrote .bettergit/config.json and .bettergit/general.md.");
         prepareCommitReports(projectPath, setup.configuration().ai());
+        prepareClassDiagrams(projectPath, setup.configuration());
         if (Files.isRegularFile(projectPath.resolve(".env"))) {
             dependencies.fileStore().ensureEnvIgnored(projectPath);
             console.diagnostic("Ensured the project .env file is ignored by Git.");
@@ -116,6 +118,14 @@ public final class BetterGitInitializer {
         if (settings.memoryEnabled()) {
             dependencies.memoryStore().initialize(projectPath);
         }
+    }
+
+    private void prepareClassDiagrams(Path projectPath, BetterGitConfiguration configuration) throws IOException {
+        if (!configuration.settings().classDiagramOnCommit()) {
+            return;
+        }
+        BetterGitDirectories.child(projectPath, "diagrams");
+        dependencies.fileStore().ensureDiagramsIgnored(projectPath);
     }
 
     private void initializeGitLast(Path projectPath, GitPresence gitPresence, ConsolePort console) {
