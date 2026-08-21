@@ -59,11 +59,15 @@ final class RecordingConsole implements ConsolePort {
     }
 
     @Override
-    public List<Boolean> chooseMany(String question, List<String> choices) {
+    public List<Boolean> chooseMany(
+            String question, List<String> choices, List<Boolean> initialSelections) {
         prompts.add(question);
         List<Boolean> selections = new ArrayList<>(choices.size());
         for (int index = 0; index < choices.size(); index++) {
-            selections.add(nextSelection(ConfirmationDefault.NO));
+            ConfirmationDefault defaultChoice = initialSelections.get(index)
+                    ? ConfirmationDefault.YES
+                    : ConfirmationDefault.NO;
+            selections.add(nextSelection(defaultChoice));
         }
         return List.copyOf(selections);
     }

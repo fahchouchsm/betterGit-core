@@ -33,8 +33,10 @@ final class InteractiveMenu {
         return selection.indexOf(true);
     }
 
-    List<Boolean> chooseMany(String question, List<String> choices) throws IOException {
-        List<Boolean> selectedRows = run(multipleSelectionMenu(question, choices), 0);
+    List<Boolean> chooseMany(
+            String question, List<String> choices, List<Boolean> initialSelections) throws IOException {
+        List<Boolean> selectedRows = run(
+                multipleSelectionMenu(question, choices), 0, initialSelections);
         return List.copyOf(selectedRows.subList(0, choices.size()));
     }
 
@@ -45,17 +47,23 @@ final class InteractiveMenu {
     }
 
     private List<Boolean> run(MenuView menu, int initialCursor) throws IOException {
+        return run(menu, initialCursor, java.util.Collections.nCopies(menu.choices().size(), false));
+    }
+
+    private List<Boolean> run(
+            MenuView menu, int initialCursor, List<Boolean> initialSelections) throws IOException {
         try (Terminal terminal = TerminalBuilder.builder().system(true).provider("exec").build()) {
-            return readSelection(terminal, menu, initialCursor);
+            return readSelection(terminal, menu, initialCursor, initialSelections);
         }
     }
 
-    private List<Boolean> readSelection(Terminal terminal, MenuView menu, int initialCursor) throws IOException {
+    private List<Boolean> readSelection(
+            Terminal terminal, MenuView menu, int initialCursor, List<Boolean> initialSelections) throws IOException {
         Attributes originalAttributes = terminal.getAttributes();
         terminal.enterRawMode();
         enterMenuScreen(terminal);
         try {
-            return selectionLoop(terminal, menu, initialCursor);
+            return selectionLoop(terminal, menu, initialCursor, initialSelections);
         } finally {
             leaveMenuScreen(terminal);
             terminal.setAttributes(originalAttributes);
@@ -76,8 +84,9 @@ final class InteractiveMenu {
         terminal.puts(Capability.exit_ca_mode);
     }
 
-    private List<Boolean> selectionLoop(Terminal terminal, MenuView menu, int initialCursor) throws IOException {
-        MenuState state = new MenuState(menu.choices().size(), initialCursor);
+    private List<Boolean> selectionLoop(
+            Terminal terminal, MenuView menu, int initialCursor, List<Boolean> initialSelections) throws IOException {
+        MenuState state = new MenuState(menu.choices().size(), initialCursor, initialSelections);
         BindingReader keys = new BindingReader(terminal.reader());
         KeyMap<Integer> bindings = bindings(terminal);
         while (true) {
@@ -211,7 +220,14 @@ final class InteractiveMenu {
         private int cursor;
 
         MenuState(int choiceCount, int initialCursor) {
+            this(choiceCount, initialCursor, java.util.Collections.nCopies(choiceCount, false));
+        }
+
+        MenuState(int choiceCount, int initialCursor, List<Boolean> initialSelections) {
             selected = new boolean[choiceCount];
+            for (int index = 0; index < Math.min(choiceCount, initialSelections.size()); index++) {
+                selected[index] = initialSelections.get(index);
+            }
             cursor = initialCursor;
         }
 

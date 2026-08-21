@@ -2,6 +2,7 @@ package io.fahchouchsm.betterGitCore.commands.console;
 
 import java.io.IOException;
 import java.io.PrintWriter;
+import java.util.Collections;
 import java.util.List;
 
 /** Terminal boundary used by commands and initialization workflows. */
@@ -14,7 +15,12 @@ public interface ConsolePort {
 
     int chooseOne(String question, List<String> choices, int defaultChoice) throws IOException;
 
-    List<Boolean> chooseMany(String question, List<String> choices) throws IOException;
+    default List<Boolean> chooseMany(String question, List<String> choices) throws IOException {
+        return chooseMany(question, choices, Collections.nCopies(choices.size(), false));
+    }
+
+    List<Boolean> chooseMany(
+            String question, List<String> choices, List<Boolean> initialSelections) throws IOException;
 
     PrintWriter out();
 

@@ -23,4 +23,10 @@ public record BetterGitConfiguration(
                 schemaVersion, createdAt, projectPath, javaDetected, gitAlreadyExisted, settings,
                 aiDocumentationAvailable, new AiCommitSettings(ai.commitReportEnabled(), ai.memoryEnabled(), model));
     }
+
+    public BetterGitConfiguration withSettings(FeatureSettings updatedSettings) {
+        return new BetterGitConfiguration(
+                schemaVersion, createdAt, projectPath, javaDetected, gitAlreadyExisted, updatedSettings,
+                aiDocumentationAvailable, ai);
+    }
 }

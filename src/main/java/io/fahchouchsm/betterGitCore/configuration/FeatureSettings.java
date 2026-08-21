@@ -1,6 +1,6 @@
 package io.fahchouchsm.betterGitCore.configuration;
 
-/** Optional BetterGit features configured for future commit commands. */
+/** Optional BetterGit behaviors applied to project commits and documentation. */
 public record FeatureSettings(
         boolean classDiagramOnCommit,
         boolean testDurationTracking,

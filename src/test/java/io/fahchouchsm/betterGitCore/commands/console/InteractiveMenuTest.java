@@ -41,4 +41,15 @@ class InteractiveMenuTest {
                 state.submittedSelection(InteractiveMenu.SelectionMode.MULTIPLE));
     }
 
+    @Test
+    void multipleSelectionStartsFromTheCurrentSettings() {
+        InteractiveMenu.MenuView menu = InteractiveMenu.multipleSelectionMenu(
+                "Choose features", List.of("First", "Second", "Third"));
+        InteractiveMenu.MenuState state = new InteractiveMenu.MenuState(
+                4, 0, List.of(true, false, true));
+
+        assertEquals(List.of(true, false, true, false),
+                state.submittedSelection(InteractiveMenu.SelectionMode.MULTIPLE));
+    }
+
 }

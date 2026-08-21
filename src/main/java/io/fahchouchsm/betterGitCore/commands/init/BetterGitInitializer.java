@@ -1,12 +1,13 @@
 package io.fahchouchsm.betterGitCore.commands.init;
 
+import io.fahchouchsm.betterGitCore.commands.FeatureMenu;
 import io.fahchouchsm.betterGitCore.commands.console.ConsolePort;
 import io.fahchouchsm.betterGitCore.commands.console.ConfirmationDefault;
 import io.fahchouchsm.betterGitCore.configuration.AiCommitSettings;
 import io.fahchouchsm.betterGitCore.configuration.AiConfiguration;
 import io.fahchouchsm.betterGitCore.configuration.BetterGitConfiguration;
-import io.fahchouchsm.betterGitCore.configuration.BetterGitDirectories;
 import io.fahchouchsm.betterGitCore.configuration.FeatureSettings;
+import io.fahchouchsm.betterGitCore.configuration.FeatureStoragePreparer;
 import io.fahchouchsm.betterGitCore.documentation.DocumentationResult;
 import io.fahchouchsm.betterGitCore.documentation.DocumentationStatus;
 import io.fahchouchsm.betterGitCore.project.MarkdownScanResult;
@@ -15,7 +16,6 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
-import java.util.List;
 import java.util.Optional;
 
 /** Coordinates BetterGit setup without implementing Git or AI provider logic. */
@@ -102,7 +102,8 @@ public final class BetterGitInitializer {
                 projectPath, setup.configuration(), setup.documentation().content());
         console.diagnostic("Wrote .bettergit/config.json and .bettergit/general.md.");
         prepareCommitReports(projectPath, setup.configuration().ai());
-        prepareClassDiagrams(projectPath, setup.configuration());
+        new FeatureStoragePreparer(dependencies.fileStore())
+                .prepare(projectPath, setup.configuration().settings());
         if (Files.isRegularFile(projectPath.resolve(".env"))) {
             dependencies.fileStore().ensureEnvIgnored(projectPath);
             console.diagnostic("Ensured the project .env file is ignored by Git.");
@@ -118,14 +119,6 @@ public final class BetterGitInitializer {
         if (settings.memoryEnabled()) {
             dependencies.memoryStore().initialize(projectPath);
         }
-    }
-
-    private void prepareClassDiagrams(Path projectPath, BetterGitConfiguration configuration) throws IOException {
-        if (!configuration.settings().classDiagramOnCommit()) {
-            return;
-        }
-        BetterGitDirectories.child(projectPath, "diagrams");
-        dependencies.fileStore().ensureDiagramsIgnored(projectPath);
     }
 
     private void initializeGitLast(Path projectPath, GitPresence gitPresence, ConsolePort console) {
@@ -172,13 +165,8 @@ public final class BetterGitInitializer {
             console.diagnostic("Using safe defaults for all optional Java features.");
             return FeatureSettings.disabled();
         }
-        List<Boolean> selections = console.chooseMany(
-                "Select the Java features to enable",
-                List.of(
-                        "Save a class diagram on each commit",
-                        "Track test duration on each commit",
-                        "Generate SonarQube documentation"));
-        return new FeatureSettings(selections.get(0), selections.get(1), selections.get(2));
+        return FeatureMenu.select(
+                console, "Select the Java features to enable", FeatureSettings.disabled());
     }
 
     private AiSetup collectAiSetup(

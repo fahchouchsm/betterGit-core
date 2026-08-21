@@ -33,6 +33,8 @@ import io.fahchouchsm.betterGitCore.history.HistoryDateParser;
 import io.fahchouchsm.betterGitCore.history.HistoryJsonRenderer;
 import io.fahchouchsm.betterGitCore.history.HistoryTextRenderer;
 import io.fahchouchsm.betterGitCore.history.RelativeTimeFormatter;
+import io.fahchouchsm.betterGitCore.testduration.BuildToolTestSuiteRunner;
+import io.fahchouchsm.betterGitCore.testduration.TestDurationService;
 import picocli.CommandLine;
 import picocli.CommandLine.Help.Ansi;
 
@@ -107,33 +109,45 @@ public final class CommandRunner {
 
     private static CommandLine createCommandLine(CommandRuntime runtime) {
         ApplicationServices services = ApplicationServices.create();
-        BetterGitInitializer initializer = initializer(runtime, services);
         AiCommitReportGenerator reportGenerator = reportGenerator(runtime, services);
-        CommitCommandDependencies commitDependencies = new CommitCommandDependencies(
+        ApplicationCommands commands = new ApplicationCommands(
+                initializer(runtime, services),
+                commitDependencies(runtime, services, reportGenerator),
+                new AiSetupCommandDependencies(
+                        services.aiConfigurationLoader(), services.aiSetupService(),
+                        services.configurationLoader(), services.fileStore(),
+                        runtime.console(), runtime.environment()),
+                new FeaturesCommandDependencies(
+                        services.configurationLoader(), services.fileStore(), runtime.console()));
+        return commandLine(runtime, commands);
+    }
+
+    private static CommitCommandDependencies commitDependencies(
+            CommandRuntime runtime,
+            ApplicationServices services,
+            AiCommitReportGenerator reportGenerator) {
+        return new CommitCommandDependencies(
                 runtime.commitExecutor(), reportGenerator,
                 new CommitDiagramService(new Java2DiagramCliAdapter(),
+                        services.configurationLoader(), services.fileStore()),
+                new TestDurationService(new BuildToolTestSuiteRunner(),
                         services.configurationLoader(), services.fileStore()),
                 services.reportStore(), services.memoryStore(), services.configurationLoader(),
                 services.aiConfigurationLoader(), services.aiSetupService(), services.fileStore(),
                 runtime.console(), runtime.environment());
-        AiSetupCommandDependencies aiSetupDependencies = new AiSetupCommandDependencies(
-                services.aiConfigurationLoader(), services.aiSetupService(), services.configurationLoader(),
-                services.fileStore(), runtime.console(), runtime.environment());
-        return commandLine(runtime, initializer, commitDependencies, aiSetupDependencies);
     }
 
-    private static CommandLine commandLine(
-            CommandRuntime runtime,
-            BetterGitInitializer initializer,
-            CommitCommandDependencies commitDependencies,
-            AiSetupCommandDependencies aiSetupDependencies) {
+    private static CommandLine commandLine(CommandRuntime runtime, ApplicationCommands commands) {
         ConsolePort console = runtime.console();
         BetterGitCommand rootCommand = new BetterGitCommand();
         CommandLine commandLine = new CommandLine(rootCommand);
-        commandLine.addSubcommand("init", new InitCommand(initializer, console, runtime.projectPath()));
-        commandLine.addSubcommand("commit", new CommitCommand(commitDependencies, runtime.projectPath()));
+        commandLine.addSubcommand("init", new InitCommand(commands.initializer(), console, runtime.projectPath()));
+        commandLine.addSubcommand("commit", new CommitCommand(
+                commands.commitDependencies(), runtime.projectPath()));
+        commandLine.addSubcommand("features", new FeaturesCommand(
+                commands.featuresDependencies(), runtime.projectPath()));
         commandLine.addSubcommand("log", logCommand(runtime));
-        commandLine.addSubcommand("ai", aiCommand(runtime, aiSetupDependencies));
+        commandLine.addSubcommand("ai", aiCommand(runtime, commands.aiSetupDependencies()));
         commandLine.addSubcommand("help", new CommandLine.HelpCommand());
         commandLine.setOut(console.out());
         commandLine.setErr(console.err());
@@ -270,5 +284,12 @@ public final class CommandRunner {
                     new AiSetupService(fileStore, new AiCredentialStore()),
                     new CommitReportStore());
         }
+    }
+
+    private record ApplicationCommands(
+            BetterGitInitializer initializer,
+            CommitCommandDependencies commitDependencies,
+            AiSetupCommandDependencies aiSetupDependencies,
+            FeaturesCommandDependencies featuresDependencies) {
     }
 }

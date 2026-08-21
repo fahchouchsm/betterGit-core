@@ -35,6 +35,7 @@ class CommandRunnerTest {
         assertTrue(console.output().contains("Usage:"));
         assertTrue(console.output().contains("init"));
         assertTrue(console.output().contains("commit"));
+        assertTrue(console.output().contains("features"));
         assertTrue(console.output().contains("log"));
         assertTrue(console.output().contains("ai"));
         assertTrue(console.output().contains("help"));
@@ -126,6 +127,24 @@ class CommandRunnerTest {
         assertTrue(logConsole.output().contains("--since"));
         assertEquals(CommandLine.ExitCode.OK, aiExitCode);
         assertTrue(aiConsole.output().contains("Securely configure the project AI key"));
+    }
+
+    @Test
+    void featuresCommandUpdatesSettingsAndPreparesTrackingStorage() throws Exception {
+        Files.writeString(projectPath.resolve("pom.xml"), "<project/>\n");
+        assertEquals(CommandLine.ExitCode.OK,
+                execute(new RecordingConsole(), new TestRepository(true), "init", "--yes"));
+        RecordingConsole console = new RecordingConsole("n", "y", "n");
+
+        int exitCode = execute(console, new TestRepository(true), "features");
+
+        assertEquals(CommandLine.ExitCode.OK, exitCode);
+        String configuration = Files.readString(projectPath.resolve(".bettergit/config.json"));
+        assertTrue(configuration.contains("\"testDurationTracking\": true"));
+        assertTrue(Files.isDirectory(projectPath.resolve(".bettergit/test-durations")));
+        assertTrue(Files.readString(projectPath.resolve(".gitignore"))
+                .contains(".bettergit/test-durations/"));
+        assertTrue(console.output().contains("Test duration tracking: enabled"));
     }
 
     @Test
