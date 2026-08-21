@@ -14,9 +14,9 @@ class AiSystemErrorTest {
     }
 
     @Test
-    void rejectsUrlTemplateWithoutModelPlaceholder() {
+    void rejectsInvalidApiUrl() {
         Map<String, String> configuration = Map.of(
-                "AI_API_KEY", "test-key", "AI_MODEL", "test-model", "AI_API_URL_TEMPLATE", "https://example.test");
+                "AI_API_KEY", "test-key", "AI_API_MODEL", "test-model", "AI_API_URL", "not a URL");
 
         assertThrows(AiConfigurationException.class, () -> AiSystem.fromConfiguration(configuration));
     }
