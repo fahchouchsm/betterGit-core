@@ -13,8 +13,8 @@ public final class JGitRepositoryAccess implements RepositoryAccess {
     }
 
     @Override
-    public boolean isInsideRepository(Path projectPath) {
-        return gitManager.isInsideRepository(projectPath);
+    public boolean hasRepository(Path projectPath) {
+        return gitManager.hasRepository(projectPath);
     }
 
     @Override

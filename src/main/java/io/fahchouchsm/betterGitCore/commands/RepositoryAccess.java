@@ -4,7 +4,7 @@ import java.nio.file.Path;
 
 /** Git operations required by command orchestration. */
 public interface RepositoryAccess {
-    boolean isInsideRepository(Path projectPath);
+    boolean hasRepository(Path projectPath);
 
     void initialize(Path projectPath);
 }

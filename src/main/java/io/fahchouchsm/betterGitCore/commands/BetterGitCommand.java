@@ -15,6 +15,7 @@ import picocli.CommandLine.Spec;
         versionProvider = BetterGitVersionProvider.class,
         sortOptions = false,
         usageHelpAutoWidth = true,
+        footer = "All other Git commands are available directly, for example: bettergit add .",
         synopsisHeading = "%nUsage:%n  ",
         optionListHeading = "%nOptions:%n",
         commandListHeading = "%nCommands:%n")

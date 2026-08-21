@@ -34,6 +34,7 @@ import io.fahchouchsm.betterGitCore.history.RelativeTimeFormatter;
 import picocli.CommandLine;
 import picocli.CommandLine.Help.Ansi;
 
+import java.io.IOException;
 import java.nio.file.Path;
 import java.time.Clock;
 import java.util.Collections;
@@ -42,6 +43,11 @@ import java.util.Set;
 
 /** Application entry point and Picocli composition root. */
 public final class CommandRunner {
+    private static final Set<String> ROOT_ACTIONS = Set.of(
+            "-h", "--help", "-V", "--version");
+    private static final Set<String> BETTERGIT_GLOBAL_OPTIONS = Set.of(
+            "-v", "--verbose", "--no-color");
+
     private CommandRunner() {
     }
 
@@ -64,7 +70,37 @@ public final class CommandRunner {
     }
 
     static int execute(String[] arguments, CommandRuntime runtime) {
-        return createCommandLine(runtime).execute(arguments);
+        CommandLine commandLine = createCommandLine(runtime);
+        if (!usesEnhancedCommand(arguments, commandLine)) {
+            return executeNativeGit(arguments, runtime);
+        }
+        return commandLine.execute(arguments);
+    }
+
+    private static boolean usesEnhancedCommand(String[] arguments, CommandLine commandLine) {
+        if (arguments.length == 0) {
+            return true;
+        }
+        for (String argument : arguments) {
+            if (!BETTERGIT_GLOBAL_OPTIONS.contains(argument)) {
+                return ROOT_ACTIONS.contains(argument)
+                        || commandLine.getSubcommands().containsKey(argument);
+            }
+        }
+        return true;
+    }
+
+    private static int executeNativeGit(String[] arguments, CommandRuntime runtime) {
+        try {
+            return new NativeGitCommand(runtime.projectPath()).execute(arguments);
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            runtime.console().failure("BetterGit was interrupted while Git was running.");
+        } catch (IOException exception) {
+            runtime.console().failure(
+                    "BetterGit could not start Git. Ensure Git is installed and available on PATH.");
+        }
+        return CommandLine.ExitCode.SOFTWARE;
     }
 
     private static CommandLine createCommandLine(CommandRuntime runtime) {

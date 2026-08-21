@@ -27,12 +27,11 @@ import java.nio.file.Path;
 /** Provides repository detection, initialization, and read-only inspection through JGit. */
 public final class JGitManager {
 
-    /** Detects parent repositories and both directory- and file-based .git metadata. */
-    public boolean isInsideRepository(Path projectPath) {
+    /** Restricts initialization decisions to the project boundary instead of inheriting a parent repository. */
+    public boolean hasRepository(Path projectPath) {
         Path repositoryPath = requireDirectory(projectPath);
-        FileRepositoryBuilder repositoryBuilder = new FileRepositoryBuilder();
-        repositoryBuilder.findGitDir(repositoryPath.toFile());
-        return repositoryBuilder.getGitDir() != null;
+        Path gitMetadata = repositoryPath.resolve(Constants.DOT_GIT);
+        return Files.isDirectory(gitMetadata) || Files.isRegularFile(gitMetadata);
     }
 
     /** Initializes a Git repository in the supplied directory without changing its configuration or contents. */

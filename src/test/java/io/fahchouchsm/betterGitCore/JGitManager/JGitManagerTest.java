@@ -64,9 +64,9 @@ class JGitManagerTest {
             Files.writeString(linkedWorktree.resolve(".git"),
                     "gitdir: " + git.getRepository().getDirectory().getAbsolutePath() + "\n");
 
-            assertTrue(manager.isInsideRepository(mainRepository));
-            assertTrue(manager.isInsideRepository(linkedWorktree));
-            assertFalse(manager.isInsideRepository(temporaryFolder));
+            assertTrue(manager.hasRepository(mainRepository));
+            assertTrue(manager.hasRepository(linkedWorktree));
+            assertFalse(manager.hasRepository(temporaryFolder));
         }
     }
 
@@ -74,7 +74,7 @@ class JGitManagerTest {
     void initializesRepositoryWithoutCreatingACommit() {
         manager.initializeRepository(temporaryFolder);
 
-        assertTrue(manager.isInsideRepository(temporaryFolder));
+        assertTrue(manager.hasRepository(temporaryFolder));
         try (Git git = Git.open(temporaryFolder.toFile())) {
             assertTrue(git.getRepository().resolve("HEAD") == null);
         } catch (Exception exception) {
@@ -189,6 +189,19 @@ class JGitManagerTest {
             assertEquals(40, commitHash.length());
             assertEquals("Document the nested project change.",
                     git.log().call().iterator().next().getShortMessage());
+        }
+    }
+
+    @Test
+    void initializesAnIndependentRepositoryInsideAParentRepository() throws Exception {
+        Path childProject = Files.createDirectory(temporaryFolder.resolve("child"));
+        try (Git ignored = Git.init().setDirectory(temporaryFolder.toFile()).call()) {
+            assertFalse(manager.hasRepository(childProject));
+
+            manager.initializeRepository(childProject);
+
+            assertTrue(manager.hasRepository(childProject));
+            assertTrue(Files.isDirectory(childProject.resolve(".git")));
         }
     }
 }

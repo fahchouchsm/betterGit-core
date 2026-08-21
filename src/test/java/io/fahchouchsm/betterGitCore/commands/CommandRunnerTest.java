@@ -1,7 +1,9 @@
 package io.fahchouchsm.betterGitCore.commands;
 
+import io.fahchouchsm.betterGitCore.JGitManager.JGitManager;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.eclipse.jgit.api.Git;
 import picocli.CommandLine;
 import io.fahchouchsm.betterGitCore.commitreport.CommitSnapshot;
 import io.fahchouchsm.betterGitCore.commitreport.DiffStatistics;
@@ -36,6 +38,7 @@ class CommandRunnerTest {
         assertTrue(console.output().contains("log"));
         assertTrue(console.output().contains("ai"));
         assertTrue(console.output().contains("help"));
+        assertTrue(console.output().contains("bettergit add ."));
     }
 
     @Test
@@ -56,14 +59,16 @@ class CommandRunnerTest {
     }
 
     @Test
-    void unknownCommandReturnsUsageExitCodeAndGuidance() {
-        RecordingConsole console = new RecordingConsole();
+    void delegatesUnenhancedCommandsToGit() throws Exception {
+        new JGitManager().initializeRepository(projectPath);
+        Files.writeString(projectPath.resolve("notes.txt"), "staged through BetterGit\n");
 
-        int exitCode = execute(console, new TestRepository(true), "unknown");
+        int exitCode = execute(new RecordingConsole(), new TestRepository(true), "add", "notes.txt");
 
-        assertEquals(CommandLine.ExitCode.USAGE, exitCode);
-        assertTrue(console.errors().contains("Unmatched argument"));
-        assertTrue(console.errors().contains("bettergit --help"));
+        assertEquals(CommandLine.ExitCode.OK, exitCode);
+        try (Git git = Git.open(projectPath.toFile())) {
+            assertTrue(git.status().call().getAdded().contains("notes.txt"));
+        }
     }
 
     @Test
@@ -215,7 +220,7 @@ class CommandRunnerTest {
         String secret = "secret-api-key";
         RepositoryAccess failingRepository = new RepositoryAccess() {
             @Override
-            public boolean isInsideRepository(Path projectPath) {
+            public boolean hasRepository(Path projectPath) {
                 throw new IllegalStateException("repository check failed with " + secret);
             }
 
@@ -277,7 +282,7 @@ class CommandRunnerTest {
         }
 
         @Override
-        public boolean isInsideRepository(Path projectPath) {
+        public boolean hasRepository(Path projectPath) {
             detectionCount++;
             return exists;
         }

@@ -364,7 +364,7 @@ class InitCommandTest {
         }
 
         @Override
-        public boolean isInsideRepository(Path ignored) {
+        public boolean hasRepository(Path ignored) {
             return repositoryExists;
         }
 

@@ -59,7 +59,7 @@ public final class CommitCommand implements Callable<Integer> {
         if (nothingToCommit(report)) {
             dependencies.console().info(
                     "Nothing to commit: no staged changes were found. "
-                            + "Stage a non-ignored file with 'git add <path>' and try again.");
+                            + "Stage a non-ignored file with 'bettergit add <path>' and try again.");
             return CommandLine.ExitCode.OK;
         }
         if (requiredReportFailed(report)) {

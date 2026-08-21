@@ -43,7 +43,7 @@ public final class BetterGitInitializer {
     }
 
     private GitPresence gitPresence(Path projectPath) {
-        return dependencies.repositoryAccess().isInsideRepository(projectPath)
+        return dependencies.repositoryAccess().hasRepository(projectPath)
                 ? GitPresence.EXISTING
                 : GitPresence.MISSING;
     }
