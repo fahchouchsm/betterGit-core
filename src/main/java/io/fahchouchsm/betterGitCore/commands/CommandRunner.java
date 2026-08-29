@@ -22,6 +22,8 @@ import io.fahchouchsm.betterGitCore.configuration.AiCredentialStore;
 import io.fahchouchsm.betterGitCore.configuration.AiSetupService;
 import io.fahchouchsm.betterGitCore.configuration.BetterGitConfigurationLoader;
 import io.fahchouchsm.betterGitCore.configuration.BetterGitFileStore;
+import io.fahchouchsm.betterGitCore.configuration.SonarQubeConfigurationLoader;
+import io.fahchouchsm.betterGitCore.configuration.SonarQubeCredentialStore;
 import io.fahchouchsm.betterGitCore.documentation.AiSystemTextGenerator;
 import io.fahchouchsm.betterGitCore.documentation.ProjectDocumentationGenerator;
 import io.fahchouchsm.betterGitCore.diagram.CommitDiagramService;
@@ -35,6 +37,10 @@ import io.fahchouchsm.betterGitCore.history.HistoryTextRenderer;
 import io.fahchouchsm.betterGitCore.history.RelativeTimeFormatter;
 import io.fahchouchsm.betterGitCore.testduration.BuildToolTestSuiteRunner;
 import io.fahchouchsm.betterGitCore.testduration.TestDurationService;
+import io.fahchouchsm.betterGitCore.sonarqube.BuildToolSonarScanner;
+import io.fahchouchsm.betterGitCore.sonarqube.HttpSonarQualityGateClient;
+import io.fahchouchsm.betterGitCore.sonarqube.SonarQubeService;
+import io.fahchouchsm.betterGitCore.sonarqube.SonarQubeServiceDependencies;
 import picocli.CommandLine;
 import picocli.CommandLine.Help.Ansi;
 
@@ -73,7 +79,7 @@ public final class CommandRunner {
         }
     }
 
-    static int execute(String[] arguments, CommandRuntime runtime) {
+    public static int execute(String[] arguments, CommandRuntime runtime) {
         CommandLine commandLine = createCommandLine(runtime);
         if (!usesEnhancedCommand(arguments, commandLine)) {
             return executeNativeGit(arguments, runtime);
@@ -113,13 +119,24 @@ public final class CommandRunner {
         ApplicationCommands commands = new ApplicationCommands(
                 initializer(runtime, services),
                 commitDependencies(runtime, services, reportGenerator),
+                mergeDependencies(runtime, services),
                 new AiSetupCommandDependencies(
                         services.aiConfigurationLoader(), services.aiSetupService(),
                         services.configurationLoader(), services.fileStore(),
                         runtime.console(), runtime.environment()),
                 new FeaturesCommandDependencies(
-                        services.configurationLoader(), services.fileStore(), runtime.console()));
+                        services.configurationLoader(), services.fileStore(), runtime.console(),
+                        new SonarQubeConfigurationLoader(), new SonarQubeCredentialStore(),
+                        runtime.environment()));
         return commandLine(runtime, commands);
+    }
+
+    private static MergeCommandDependencies mergeDependencies(
+            CommandRuntime runtime, ApplicationServices services) {
+        return new MergeCommandDependencies(
+                new NativeGitMergeExecutor(),
+                projectPath -> runtime.commitDataSource().stagedSnapshot(projectPath).branch(),
+                sonarQubeGate(runtime, services), runtime.console());
     }
 
     private static CommitCommandDependencies commitDependencies(
@@ -132,9 +149,18 @@ public final class CommandRunner {
                         services.configurationLoader(), services.fileStore()),
                 new TestDurationService(new BuildToolTestSuiteRunner(),
                         services.configurationLoader(), services.fileStore()),
+                sonarQubeGate(runtime, services),
+                projectPath -> runtime.commitDataSource().stagedSnapshot(projectPath).branch(),
                 services.reportStore(), services.memoryStore(), services.configurationLoader(),
                 services.aiConfigurationLoader(), services.aiSetupService(), services.fileStore(),
                 runtime.console(), runtime.environment());
+    }
+
+    private static SonarQubeGate sonarQubeGate(CommandRuntime runtime, ApplicationServices services) {
+        SonarQubeService service = new SonarQubeService(new SonarQubeServiceDependencies(
+                services.configurationLoader(), new SonarQubeConfigurationLoader(),
+                new BuildToolSonarScanner(), new HttpSonarQualityGateClient(), runtime.environment()));
+        return new SonarQubeGate(service, runtime.console());
     }
 
     private static CommandLine commandLine(CommandRuntime runtime, ApplicationCommands commands) {
@@ -144,6 +170,8 @@ public final class CommandRunner {
         commandLine.addSubcommand("init", new InitCommand(commands.initializer(), console, runtime.projectPath()));
         commandLine.addSubcommand("commit", new CommitCommand(
                 commands.commitDependencies(), runtime.projectPath()));
+        commandLine.addSubcommand("merge", new MergeCommand(
+                commands.mergeDependencies(), runtime.projectPath()));
         commandLine.addSubcommand("features", new FeaturesCommand(
                 commands.featuresDependencies(), runtime.projectPath()));
         commandLine.addSubcommand("log", logCommand(runtime));
@@ -289,6 +317,7 @@ public final class CommandRunner {
     private record ApplicationCommands(
             BetterGitInitializer initializer,
             CommitCommandDependencies commitDependencies,
+            MergeCommandDependencies mergeDependencies,
             AiSetupCommandDependencies aiSetupDependencies,
             FeaturesCommandDependencies featuresDependencies) {
     }

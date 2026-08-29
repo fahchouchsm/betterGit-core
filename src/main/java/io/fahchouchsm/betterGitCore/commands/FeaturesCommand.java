@@ -3,6 +3,7 @@ package io.fahchouchsm.betterGitCore.commands;
 import io.fahchouchsm.betterGitCore.configuration.BetterGitConfiguration;
 import io.fahchouchsm.betterGitCore.configuration.FeatureSettings;
 import io.fahchouchsm.betterGitCore.configuration.FeatureStoragePreparer;
+import io.fahchouchsm.betterGitCore.configuration.SonarQubeSettings;
 import picocli.CommandLine;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Parameters;
@@ -61,20 +62,38 @@ public final class FeaturesCommand implements Callable<Integer> {
     private void saveFeatures(Path projectPath, BetterGitConfiguration configuration) throws IOException {
         FeatureSettings selected = FeatureMenu.select(
                 dependencies.console(), "Select the Java features to enable", configuration.settings());
+        selected = configureSonarQube(projectPath, selected);
         dependencies.fileStore().writeConfiguration(projectPath, configuration.withSettings(selected));
         new FeatureStoragePreparer(dependencies.fileStore()).prepare(projectPath, selected);
         dependencies.console().success("BetterGit feature settings updated.");
         dependencies.console().info(featureSummary(selected));
     }
 
+    private FeatureSettings configureSonarQube(Path projectPath, FeatureSettings selected) throws IOException {
+        if (!selected.sonarQubeDocumentation()) {
+            return selected;
+        }
+        SonarQubeSettingsCollector collector = new SonarQubeSettingsCollector(new SonarQubeSettingsDependencies(
+                dependencies.sonarQubeConfigurationLoader(), dependencies.sonarQubeCredentialStore(),
+                dependencies.fileStore(), dependencies.console(), dependencies.environment()));
+        SonarQubeSettings configured = collector.configure(projectPath, selected.sonarQube());
+        return selected.withSonarQube(configured);
+    }
+
     private static String featureSummary(FeatureSettings settings) {
         return """
                 Class diagrams: %s
                 Test duration tracking: %s
-                SonarQube documentation: %s""".formatted(
+                SonarQube quality gate: %s
+                SonarQube triggers: %s
+                SonarQube branches: %s""".formatted(
                 enabled(settings.classDiagramOnCommit()),
                 enabled(settings.testDurationTracking()),
-                enabled(settings.sonarQubeDocumentation()));
+                enabled(settings.sonarQubeDocumentation()),
+                settings.sonarQube().trigger().name().toLowerCase().replace('_', ' '),
+                settings.sonarQube().branches().isEmpty()
+                        ? "all"
+                        : String.join(", ", settings.sonarQube().branches()));
     }
 
     private static String enabled(boolean enabled) {

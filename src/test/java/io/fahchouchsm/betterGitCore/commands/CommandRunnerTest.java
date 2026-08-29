@@ -35,6 +35,7 @@ class CommandRunnerTest {
         assertTrue(console.output().contains("Usage:"));
         assertTrue(console.output().contains("init"));
         assertTrue(console.output().contains("commit"));
+        assertTrue(console.output().contains("merge"));
         assertTrue(console.output().contains("features"));
         assertTrue(console.output().contains("log"));
         assertTrue(console.output().contains("ai"));
@@ -145,6 +146,26 @@ class CommandRunnerTest {
         assertTrue(Files.readString(projectPath.resolve(".gitignore"))
                 .contains(".bettergit/test-durations/"));
         assertTrue(console.output().contains("Test duration tracking: enabled"));
+    }
+
+    @Test
+    void featuresCommandConfiguresSonarQubeScopePolicyAndMaskedToken() throws Exception {
+        Files.writeString(projectPath.resolve("pom.xml"), "<project/>\n");
+        assertEquals(CommandLine.ExitCode.OK,
+                execute(new RecordingConsole(), new TestRepository(true), "init", "--yes"));
+        RecordingConsole console = new RecordingConsole(
+                "n", "n", "y", "", "", "1", "main", "2", "sonar-secret");
+
+        int exitCode = execute(console, new TestRepository(true), "features");
+
+        assertEquals(CommandLine.ExitCode.OK, exitCode);
+        String configuration = Files.readString(projectPath.resolve(".bettergit/config.json"));
+        assertTrue(configuration.contains("\"trigger\": \"COMMITS\""));
+        assertTrue(configuration.contains("\"branches\": ["));
+        assertTrue(configuration.contains("\"main\""));
+        assertTrue(configuration.contains("\"failurePolicy\": \"CANCEL\""));
+        assertTrue(Files.readString(projectPath.resolve(".env")).contains("SONAR_TOKEN=sonar-secret"));
+        assertFalse(console.output().contains("sonar-secret"));
     }
 
     @Test

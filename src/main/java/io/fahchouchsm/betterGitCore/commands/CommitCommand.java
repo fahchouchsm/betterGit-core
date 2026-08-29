@@ -10,6 +10,7 @@ import io.fahchouchsm.betterGitCore.diagram.CommitDiagramPlan;
 import io.fahchouchsm.betterGitCore.testduration.TestDurationPlan;
 import io.fahchouchsm.betterGitCore.testduration.TestDurationService;
 import io.fahchouchsm.betterGitCore.testduration.TestSuiteFailedException;
+import io.fahchouchsm.betterGitCore.sonarqube.SonarQubeEvent;
 import picocli.CommandLine;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
@@ -76,12 +77,27 @@ public final class CommitCommand implements Callable<Integer> {
                     "A commit message is required. Supply -m MESSAGE or configure AI commit reports with 'bettergit init'.");
             return CommandLine.ExitCode.USAGE;
         }
+        if (!sonarQubeAllowsCommit(projectPath)) {
+            dependencies.console().failure("Commit cancelled by the SonarQube quality gate.");
+            return CommandLine.ExitCode.SOFTWARE;
+        }
         String commitHash = dependencies.commitExecutor().commit(projectPath, commitMessage);
         dependencies.console().success("Committed " + commitHash.substring(0, 8) + " · " + commitMessage);
         finalizeReport(projectPath, report, commitHash);
         generateDiagram(projectPath, commitHash);
         trackTestDuration(projectPath, commitHash);
         return CommandLine.ExitCode.OK;
+    }
+
+    private boolean sonarQubeAllowsCommit(Path projectPath) throws IOException {
+        String branch = dependencies.branchReader().currentBranch(projectPath);
+        try {
+            return dependencies.sonarQubeGate().runAndApprove(projectPath, SonarQubeEvent.COMMIT, branch);
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            dependencies.console().warning("SonarQube analysis was interrupted.");
+            return false;
+        }
     }
 
     private void trackTestDuration(Path projectPath, String commitHash) {

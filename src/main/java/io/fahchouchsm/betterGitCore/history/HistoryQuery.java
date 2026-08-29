@@ -18,4 +18,8 @@ public record HistoryQuery(
             throw new IllegalArgumentException("History limit must be between 1 and 1000.");
         }
     }
+
+    public static HistoryQuery latest(int limit) {
+        return new HistoryQuery(limit, false, null, null, null, null, null, false, false);
+    }
 }

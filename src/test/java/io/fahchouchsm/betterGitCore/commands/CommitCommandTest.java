@@ -25,6 +25,16 @@ import io.fahchouchsm.betterGitCore.documentation.AiTextGenerator;
 import io.fahchouchsm.betterGitCore.diagram.ClassDiagramGenerator;
 import io.fahchouchsm.betterGitCore.diagram.CommitDiagramService;
 import io.fahchouchsm.betterGitCore.testduration.TestDurationService;
+import io.fahchouchsm.betterGitCore.configuration.SonarQubeConfigurationLoader;
+import io.fahchouchsm.betterGitCore.sonarqube.SonarQubeService;
+import io.fahchouchsm.betterGitCore.sonarqube.SonarQubeServiceDependencies;
+import io.fahchouchsm.betterGitCore.configuration.SonarQubeFailurePolicy;
+import io.fahchouchsm.betterGitCore.configuration.SonarQubeSettings;
+import io.fahchouchsm.betterGitCore.configuration.SonarQubeTrigger;
+import io.fahchouchsm.betterGitCore.sonarqube.SonarCondition;
+import io.fahchouchsm.betterGitCore.sonarqube.SonarQualityGate;
+import io.fahchouchsm.betterGitCore.sonarqube.SonarQualityGateClient;
+import io.fahchouchsm.betterGitCore.sonarqube.SonarScanner;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import picocli.CommandLine;
@@ -53,6 +63,12 @@ class CommitCommandTest {
     private CommitSnapshot commitSnapshot = snapshot();
     private ClassDiagramGenerator diagramGenerator =
             (source, output) -> Files.writeString(output, "<svg/>\n");
+    private SonarScanner sonarScanner = request -> {
+        throw new AssertionError("disabled SonarQube scanner was invoked");
+    };
+    private SonarQualityGateClient qualityGateClient = configuration -> {
+        throw new AssertionError("disabled quality-gate API was invoked");
+    };
 
     @Test
     void aiSuggestionCreatesCommitAndFinalizesReportAndHistory() throws Exception {
@@ -184,6 +200,38 @@ class CommitCommandTest {
         assertTrue(console.output().contains("renderer failed"));
     }
 
+    @Test
+    void failedSonarQubeGateCancelsBeforeCreatingTheCommit() throws Exception {
+        SonarQubeSettings sonar = new SonarQubeSettings(
+                "https://sonar.example", "bettergit", SonarQubeTrigger.COMMITS,
+                List.of("main"), SonarQubeFailurePolicy.CANCEL);
+        writeConfiguration(
+                new FeatureSettings(false, false, true, sonar),
+                new AiCommitSettings(true, false, "test-model"));
+        sonarScanner = request -> {
+            Files.createDirectories(request.metadataFile().getParent());
+            Files.writeString(request.metadataFile(), "dashboardUrl=https://sonar.example/project\n");
+            return 1;
+        };
+        qualityGateClient = configuration -> new SonarQualityGate(
+                "ERROR", List.of(new SonarCondition("new_bugs", "ERROR", "1", "0")));
+        RecordingCommitExecutor commits = new RecordingCommitExecutor();
+        RecordingConsole console = new RecordingConsole();
+
+        Map<String, String> environment = Map.of(
+                "AI_API_KEY", "secret-api-key",
+                "AI_API_MODEL", "test-model",
+                "AI_API_URL", "https://ai.example/{model}",
+                SonarQubeConfigurationLoader.TOKEN, "sonar-token");
+        int exitCode = new CommandLine(
+                command(validReportGenerator(), commits, console, environment)).execute();
+
+        assertEquals(CommandLine.ExitCode.SOFTWARE, exitCode);
+        assertNull(commits.message);
+        assertTrue(console.errors().contains("Commit cancelled by the SonarQube quality gate"));
+        assertTrue(console.output().contains("new_bugs: 1"));
+    }
+
     private CommitCommand command(
             AiTextGenerator ai, RecordingCommitExecutor commits, RecordingConsole console) {
         return command(ai, commits, console, Map.of(
@@ -213,6 +261,11 @@ class CommitCommandTest {
                 new TestDurationService(path -> {
                     throw new AssertionError("disabled test-duration tracker was invoked");
                 }, new BetterGitConfigurationLoader(), fileStore),
+                new SonarQubeGate(new SonarQubeService(new SonarQubeServiceDependencies(
+                        new BetterGitConfigurationLoader(), new SonarQubeConfigurationLoader(),
+                        sonarScanner, qualityGateClient,
+                        environment)), console),
+                path -> commitSnapshot.branch(),
                 reportStore, memoryStore, new BetterGitConfigurationLoader(),
                 new AiConfigurationLoader(), new AiSetupService(fileStore, new AiCredentialStore()),
                 fileStore, console, environment);

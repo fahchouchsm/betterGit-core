@@ -18,6 +18,8 @@ record CommitCommandDependencies(
         AiCommitReportGenerator reportGenerator,
         CommitDiagramService diagramService,
         TestDurationService testDurationService,
+        SonarQubeGate sonarQubeGate,
+        BranchReader branchReader,
         CommitReportStore reportStore,
         AiMemoryStore memoryStore,
         BetterGitConfigurationLoader configurationLoader,

@@ -19,5 +19,9 @@ public final class FeatureStoragePreparer {
             BetterGitDirectories.child(projectPath, "test-durations");
             fileStore.ensureTestDurationsIgnored(projectPath);
         }
+        if (settings.sonarQubeDocumentation()) {
+            BetterGitDirectories.child(projectPath, "sonarqube");
+            fileStore.ensureSonarQubeIgnored(projectPath);
+        }
     }
 }

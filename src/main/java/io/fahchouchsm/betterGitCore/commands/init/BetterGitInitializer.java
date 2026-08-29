@@ -261,7 +261,7 @@ public final class BetterGitInitializer {
                 Git: %s
                 Class diagrams: %s
                 Test duration tracking: %s
-                SonarQube documentation: %s
+                SonarQube quality gate: %s
                 AI commit reports: %s
                 AI memory/context: %s
                 General documentation: %s

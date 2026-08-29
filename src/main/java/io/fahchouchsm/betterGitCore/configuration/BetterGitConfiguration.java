@@ -11,7 +11,7 @@ public record BetterGitConfiguration(
         boolean aiDocumentationAvailable,
         AiCommitSettings ai) {
 
-    public static final int CURRENT_SCHEMA_VERSION = 2;
+    public static final int CURRENT_SCHEMA_VERSION = 3;
 
     public BetterGitConfiguration {
         settings = settings == null ? FeatureSettings.disabled() : settings;
@@ -24,9 +24,15 @@ public record BetterGitConfiguration(
                 aiDocumentationAvailable, new AiCommitSettings(ai.commitReportEnabled(), ai.memoryEnabled(), model));
     }
 
+    public BetterGitConfiguration withAiSettings(AiCommitSettings updatedAi) {
+        return new BetterGitConfiguration(
+                CURRENT_SCHEMA_VERSION, createdAt, projectPath, javaDetected, gitAlreadyExisted, settings,
+                aiDocumentationAvailable, updatedAi);
+    }
+
     public BetterGitConfiguration withSettings(FeatureSettings updatedSettings) {
         return new BetterGitConfiguration(
-                schemaVersion, createdAt, projectPath, javaDetected, gitAlreadyExisted, updatedSettings,
+                CURRENT_SCHEMA_VERSION, createdAt, projectPath, javaDetected, gitAlreadyExisted, updatedSettings,
                 aiDocumentationAvailable, ai);
     }
 }

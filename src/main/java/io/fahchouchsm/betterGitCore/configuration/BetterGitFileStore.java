@@ -52,6 +52,11 @@ public final class BetterGitFileStore {
         ensureIgnored(projectPath, ".bettergit/test-durations/", ".bettergit/test-durations/"::equals);
     }
 
+    public void ensureSonarQubeIgnored(Path projectPath) throws IOException {
+        ensureIgnored(projectPath, ".bettergit/sonarqube/", ".bettergit/sonarqube/"::equals);
+        ensureIgnored(projectPath, ".scannerwork/", ".scannerwork/"::equals);
+    }
+
     private void ensureIgnored(
             Path projectPath,
             String ignoredPattern,

@@ -10,7 +10,7 @@ public final class FeatureMenu {
     private static final List<String> CHOICES = List.of(
             "Save a class diagram on each commit",
             "Track test duration on each commit",
-            "Generate SonarQube documentation");
+            "Enforce SonarQube quality gates");
 
     private FeatureMenu() {
     }
@@ -19,7 +19,8 @@ public final class FeatureMenu {
             ConsolePort console, String question, FeatureSettings currentSettings) throws IOException {
         List<Boolean> selections = console.chooseMany(
                 question, CHOICES, selectedFeatures(currentSettings));
-        return new FeatureSettings(selections.get(0), selections.get(1), selections.get(2));
+        return new FeatureSettings(
+                selections.get(0), selections.get(1), selections.get(2), currentSettings.sonarQube());
     }
 
     private static List<Boolean> selectedFeatures(FeatureSettings settings) {
