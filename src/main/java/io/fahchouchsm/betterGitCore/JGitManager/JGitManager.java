@@ -1,16 +1,21 @@
 package io.fahchouchsm.betterGitCore.JGitManager;
 
+import io.fahchouchsm.betterGitCore.JGitManager.exceptions.GitCommitException;
+import io.fahchouchsm.betterGitCore.JGitManager.exceptions.GitInitializationException;
+import io.fahchouchsm.betterGitCore.JGitManager.exceptions.GitNoStagedChangesException;
 import io.fahchouchsm.betterGitCore.JGitManager.exceptions.GitRepositoryNotFoundException;
 import io.fahchouchsm.betterGitCore.JGitManager.exceptions.GitRepositoryPathException;
 import io.fahchouchsm.betterGitCore.JGitManager.exceptions.GitStateReadException;
 import org.eclipse.jgit.api.Git;
 import org.eclipse.jgit.api.Status;
+import org.eclipse.jgit.api.errors.EmptyCommitException;
 import org.eclipse.jgit.api.errors.GitAPIException;
 import org.eclipse.jgit.errors.RepositoryNotFoundException;
 import org.eclipse.jgit.dircache.DirCacheIterator;
 import org.eclipse.jgit.diff.DiffFormatter;
 import org.eclipse.jgit.lib.Constants;
 import org.eclipse.jgit.lib.Repository;
+import org.eclipse.jgit.storage.file.FileRepositoryBuilder;
 import org.eclipse.jgit.treewalk.EmptyTreeIterator;
 
 import java.io.ByteArrayOutputStream;
@@ -19,8 +24,25 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
-/** Reads the uncommitted state of an existing local Git repository without modifying it. */
+/** Provides repository detection, initialization, and read-only inspection through JGit. */
 public final class JGitManager {
+
+    /** Restricts initialization decisions to the project boundary instead of inheriting a parent repository. */
+    public boolean hasRepository(Path projectPath) {
+        Path repositoryPath = requireDirectory(projectPath);
+        Path gitMetadata = repositoryPath.resolve(Constants.DOT_GIT);
+        return Files.isDirectory(gitMetadata) || Files.isRegularFile(gitMetadata);
+    }
+
+    /** Initializes a Git repository in the supplied directory without changing its configuration or contents. */
+    public void initializeRepository(Path projectPath) {
+        Path repositoryPath = requireDirectory(projectPath);
+        try (Git ignored = Git.init().setDirectory(repositoryPath.toFile()).call()) {
+            // Closing the JGit handle releases repository resources; initialization is already complete.
+        } catch (GitAPIException exception) {
+            throw new GitInitializationException("Could not initialize Git in " + repositoryPath, exception);
+        }
+    }
 
     /**
      * Returns changes that would affect the next commit.
@@ -32,7 +54,7 @@ public final class JGitManager {
      */
     public GitChanges getChangesBeforeCommit(Path projectPath) {
         Path repositoryPath = requireDirectory(projectPath);
-        try (Git git = Git.open(repositoryPath.toFile())) {
+        try (Git git = openContainingRepository(repositoryPath)) {
             Status status = git.status().call();
             return new GitChanges(
                     status.getAdded(),
@@ -57,12 +79,54 @@ public final class JGitManager {
      */
     public GitChangeDetails getChangeDetailsBeforeCommit(Path projectPath) {
         Path repositoryPath = requireDirectory(projectPath);
-        try (Git git = Git.open(repositoryPath.toFile())) {
+        try (Git git = openContainingRepository(repositoryPath)) {
             return new GitChangeDetails(createStagedDiff(git), createUnstagedDiff(git));
         } catch (RepositoryNotFoundException exception) {
             throw new GitRepositoryNotFoundException("Not a Git repository: " + repositoryPath, exception);
         } catch (IOException | GitAPIException exception) {
             throw new GitStateReadException("Could not read Git diffs from " + repositoryPath, exception);
+        }
+    }
+
+    /**
+     * Returns only the staged patch for the next commit, ready to send to a documentation AI.
+     * Unstaged and untracked changes are deliberately excluded because they are not part of that commit.
+     * Callers must redact sensitive content before sending this patch to an external service.
+     *
+     * @throws GitNoStagedChangesException when no changes are staged
+     */
+    public String getStagedCommitDiff(Path projectPath) {
+        String stagedDiff = getChangeDetailsBeforeCommit(projectPath).stagedDiff();
+        if (stagedDiff.isBlank()) {
+            throw new GitNoStagedChangesException("Stage changes before generating commit documentation.");
+        }
+        return stagedDiff;
+    }
+
+    public String getCurrentBranch(Path projectPath) {
+        Path repositoryPath = requireDirectory(projectPath);
+        try (Git git = openContainingRepository(repositoryPath)) {
+            return git.getRepository().getBranch();
+        } catch (RepositoryNotFoundException exception) {
+            throw new GitRepositoryNotFoundException("Not a Git repository: " + repositoryPath, exception);
+        } catch (IOException exception) {
+            throw new GitStateReadException("Could not read the current Git branch from " + repositoryPath, exception);
+        }
+    }
+
+    public String commitStagedChanges(Path projectPath, String message) {
+        Path repositoryPath = requireDirectory(projectPath);
+        if (message == null || message.isBlank()) {
+            throw new IllegalArgumentException("Commit message must not be blank.");
+        }
+        try (Git git = openContainingRepository(repositoryPath)) {
+            return git.commit().setMessage(message.strip()).call().name();
+        } catch (EmptyCommitException exception) {
+            throw new GitNoStagedChangesException("No staged changes are available to commit.");
+        } catch (RepositoryNotFoundException exception) {
+            throw new GitRepositoryNotFoundException("Not a Git repository: " + repositoryPath, exception);
+        } catch (IOException | GitAPIException exception) {
+            throw new GitCommitException("Could not create Git commit in " + repositoryPath, exception);
         }
     }
 
@@ -88,6 +152,15 @@ public final class JGitManager {
             git.diff().setCached(false).setOutputStream(output).call();
             return output.toString(StandardCharsets.UTF_8);
         }
+    }
+
+    private Git openContainingRepository(Path repositoryPath) throws IOException {
+        FileRepositoryBuilder repositoryBuilder = new FileRepositoryBuilder();
+        repositoryBuilder.findGitDir(repositoryPath.toFile());
+        if (repositoryBuilder.getGitDir() == null) {
+            throw new RepositoryNotFoundException(repositoryPath.toFile());
+        }
+        return Git.wrap(repositoryBuilder.build());
     }
 
     private Path requireDirectory(Path projectPath) {

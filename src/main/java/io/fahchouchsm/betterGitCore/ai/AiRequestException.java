@@ -8,7 +8,7 @@ public final class AiRequestException extends IOException {
     private final String responseBody;
 
     public AiRequestException(int statusCode, String responseBody) {
-        super("AI request failed with HTTP " + statusCode + ". Provider response: " + responseBody);
+        super("AI request failed with HTTP " + statusCode + ".");
         this.statusCode = statusCode;
         this.responseBody = responseBody;
     }

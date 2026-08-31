@@ -1,81 +1,68 @@
 package io.fahchouchsm.betterGitCore.ai;
 
-import com.google.gson.JsonArray;
-import com.google.gson.JsonElement;
-import com.google.gson.JsonObject;
-import com.google.gson.JsonParseException;
-import com.google.gson.JsonParser;
+import io.fahchouchsm.betterGitCore.configuration.AiConfiguration;
+import io.fahchouchsm.betterGitCore.configuration.AiProvider;
 
 import java.io.IOException;
 import java.net.URI;
-import java.net.URLEncoder;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.net.http.HttpTimeoutException;
-import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Map;
 
-/**
- * Sends text to a Gemini generateContent endpoint and returns the generated text.
- * Connection settings are supplied by the caller or environment variables.
- */
+/** Sends text through the protocol selected in the AI configuration. */
 public final class AiSystem {
     private static final Duration CONNECTION_TIMEOUT = Duration.ofSeconds(20);
     private static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(90);
 
-    private final String apiKey;
+    private final AiConfiguration configuration;
     private final URI endpoint;
+    private final AiProtocol protocol;
     private final HttpClient httpClient;
 
-    public AiSystem(String apiKey, URI endpoint) {
-        this.apiKey = requireText(apiKey, "apiKey");
-        this.endpoint = requireEndpoint(endpoint);
-        this.httpClient = HttpClient.newBuilder().connectTimeout(CONNECTION_TIMEOUT).build();
+    public AiSystem(AiConfiguration configuration) {
+        this.configuration = requireComplete(configuration);
+        endpoint = requireEndpoint(configuration.resolvedEndpoint());
+        protocol = AiProtocol.forProvider(configuration.provider());
+        httpClient = HttpClient.newBuilder().connectTimeout(CONNECTION_TIMEOUT).build();
     }
 
-    /** Creates a client from AI_API_KEY, AI_MODEL, and AI_API_URL_TEMPLATE. */
+    public AiSystem(String apiKey, URI endpoint) {
+        this(legacyConfiguration(apiKey, endpoint));
+    }
+
     public static AiSystem fromEnvironment() {
         return fromConfiguration(System.getenv());
     }
 
-    /** Creates a client from the supplied AI_API_KEY, AI_MODEL, and AI_API_URL_TEMPLATE values. */
-    public static AiSystem fromConfiguration(Map<String, String> configuration) {
-        if (configuration == null) {
+    public static AiSystem fromConfiguration(Map<String, String> settings) {
+        if (settings == null) {
             throw new AiConfigurationException("configuration must not be null");
         }
-        String apiKey = requireText(configuration.get("AI_API_KEY"), "AI_API_KEY");
-        String model = requireText(configuration.get("AI_MODEL"), "AI_MODEL");
-        String urlTemplate = requireText(configuration.get("AI_API_URL_TEMPLATE"), "AI_API_URL_TEMPLATE");
-        if (!urlTemplate.contains("{model}")) {
-            throw new AiConfigurationException("AI_API_URL_TEMPLATE must contain {model}");
-        }
-        String encodedModel = URLEncoder.encode(model, StandardCharsets.UTF_8);
-        try {
-            return new AiSystem(apiKey, URI.create(urlTemplate.replace("{model}", encodedModel)));
-        } catch (IllegalArgumentException exception) {
-            throw new AiConfigurationException("AI_API_URL_TEMPLATE must resolve to a valid HTTP URL", exception);
-        }
+        String apiKey = requiredSetting(settings, "AI_API_KEY");
+        String model = requiredPreferredSetting(settings, "AI_API_MODEL", "AI_MODEL");
+        String apiUrl = requiredPreferredSetting(settings, "AI_API_URL", "AI_API_URL_TEMPLATE");
+        AiProvider provider = AiProvider.configured(settings.get("AI_API_PROVIDER"), apiUrl);
+        return new AiSystem(new AiConfiguration(provider, apiKey, model, apiUrl));
     }
 
-    /**
-     * @param input the prompt to send to the AI
-     * @return the text produced by the AI
-     */
     public String generate(String input) throws IOException, InterruptedException {
-        HttpRequest request = HttpRequest.newBuilder(endpoint)
-                .timeout(REQUEST_TIMEOUT)
-                .header("X-goog-api-key", apiKey)
-                .header("Content-Type", "application/json")
-                .POST(HttpRequest.BodyPublishers.ofString(createRequestBody(requireInput(input))))
-                .build();
-        HttpResponse<String> response = send(request);
+        String prompt = requireInput(input);
+        AiApiRequest apiRequest = new AiApiRequest(
+                endpoint, configuration.apiKey(), configuration.model(), prompt, REQUEST_TIMEOUT);
+        HttpResponse<String> response = send(protocol.request(apiRequest));
         ensureSuccess(response);
-        return extractOutputText(response.body());
+        return protocol.outputText(response.body());
     }
 
-    private HttpResponse<String> send(HttpRequest request) throws AiConnectionException, InterruptedException {
+    static String extractOutputText(String json) throws AiResponseException {
+        return new GeminiProtocol().outputText(json);
+    }
+
+    private HttpResponse<String> send(HttpRequest request)
+            throws AiConnectionException, InterruptedException {
         try {
             return httpClient.send(request, HttpResponse.BodyHandlers.ofString());
         } catch (HttpTimeoutException exception) {
@@ -91,18 +78,18 @@ public final class AiSystem {
         }
     }
 
-    private static String createRequestBody(String input) {
-        JsonObject textPart = new JsonObject();
-        textPart.addProperty("text", input);
-        JsonArray parts = new JsonArray();
-        parts.add(textPart);
-        JsonObject content = new JsonObject();
-        content.add("parts", parts);
-        JsonArray contents = new JsonArray();
-        contents.add(content);
-        JsonObject request = new JsonObject();
-        request.add("contents", contents);
-        return request.toString();
+    private static AiConfiguration requireComplete(AiConfiguration configuration) {
+        if (configuration == null || !configuration.isComplete()) {
+            throw new AiConfigurationException("AI configuration must be complete");
+        }
+        return configuration;
+    }
+
+    private static AiConfiguration legacyConfiguration(String apiKey, URI endpoint) {
+        String validatedKey = requireText(apiKey, "apiKey");
+        URI validatedEndpoint = requireEndpoint(endpoint);
+        return new AiConfiguration(
+                AiProvider.GEMINI, validatedKey, "legacy-model", validatedEndpoint.toString());
     }
 
     private static String requireText(String value, String name) {
@@ -110,6 +97,24 @@ public final class AiSystem {
             throw new AiConfigurationException(name + " must not be blank");
         }
         return value;
+    }
+
+    private static String requiredSetting(Map<String, String> settings, String name) {
+        String setting = settings.get(name);
+        if (setting == null || setting.isBlank()) {
+            throw new AiConfigurationException(name + " must not be blank");
+        }
+        return setting;
+    }
+
+    private static String requiredPreferredSetting(
+            Map<String, String> settings, String currentName, String legacyName) {
+        String setting = settings.containsKey(currentName)
+                ? settings.get(currentName) : settings.get(legacyName);
+        if (setting == null || setting.isBlank()) {
+            throw new AiConfigurationException(currentName + " must not be blank");
+        }
+        return setting;
     }
 
     private static String requireInput(String input) {
@@ -120,64 +125,13 @@ public final class AiSystem {
     }
 
     private static URI requireEndpoint(URI endpoint) {
-        if (endpoint == null) {
-            throw new AiConfigurationException("endpoint must not be null");
-        }
-        if (!"http".equalsIgnoreCase(endpoint.getScheme()) && !"https".equalsIgnoreCase(endpoint.getScheme())) {
-            throw new AiConfigurationException("endpoint must use HTTP or HTTPS");
-        }
-        if (endpoint.getHost() == null || endpoint.getHost().isBlank()) {
+        if (endpoint == null || endpoint.getHost() == null || endpoint.getHost().isBlank()) {
             throw new AiConfigurationException("endpoint must include a host");
         }
+        if (!"http".equalsIgnoreCase(endpoint.getScheme())
+                && !"https".equalsIgnoreCase(endpoint.getScheme())) {
+            throw new AiConfigurationException("endpoint must use HTTP or HTTPS");
+        }
         return endpoint;
-    }
-
-    static String extractOutputText(String json) throws AiResponseException {
-        if (json == null || json.isBlank()) {
-            throw new AiResponseException("The AI service returned an empty response.");
-        }
-        try {
-            return generatedText(JsonParser.parseString(json).getAsJsonObject());
-        } catch (JsonParseException | IllegalStateException exception) {
-            throw new AiResponseException("The AI service returned malformed JSON.", exception);
-        }
-    }
-
-    private static String generatedText(JsonObject response) throws AiResponseException {
-        StringBuilder generatedText = new StringBuilder();
-        for (JsonElement candidateElement : requiredArray(response, "candidates")) {
-            JsonObject candidate = requiredObject(candidateElement, "candidate");
-            JsonObject content = requiredObject(candidate.get("content"), "candidate content");
-            appendPartText(generatedText, requiredArray(content, "parts"));
-        }
-        if (generatedText.isEmpty()) {
-            throw new AiResponseException("The AI response did not contain generated text.");
-        }
-        return generatedText.toString();
-    }
-
-    private static void appendPartText(StringBuilder generatedText, JsonArray parts) throws AiResponseException {
-        for (JsonElement partElement : parts) {
-            JsonObject part = requiredObject(partElement, "candidate part");
-            JsonElement text = part.get("text");
-            if (text != null && text.isJsonPrimitive() && text.getAsJsonPrimitive().isString()) {
-                generatedText.append(text.getAsString());
-            }
-        }
-    }
-
-    private static JsonArray requiredArray(JsonObject parent, String fieldName) throws AiResponseException {
-        JsonElement field = parent.get(fieldName);
-        if (field == null || !field.isJsonArray()) {
-            throw new AiResponseException("The AI response did not contain " + fieldName + ".");
-        }
-        return field.getAsJsonArray();
-    }
-
-    private static JsonObject requiredObject(JsonElement element, String description) throws AiResponseException {
-        if (element == null || !element.isJsonObject()) {
-            throw new AiResponseException("The AI response did not contain a valid " + description + ".");
-        }
-        return element.getAsJsonObject();
     }
 }
