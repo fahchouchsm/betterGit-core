@@ -5,14 +5,27 @@ import io.fahchouchsm.betterGitCore.JGitManager.JGitManager;
 import io.fahchouchsm.betterGitCore.commands.CommandRunner;
 import io.fahchouchsm.betterGitCore.commands.CommandRuntime;
 import io.fahchouchsm.betterGitCore.commands.JGitRepositoryAccess;
+import io.fahchouchsm.betterGitCore.commitreport.AiCommitContextBuilder;
+import io.fahchouchsm.betterGitCore.commitreport.AiCommitPromptBuilder;
+import io.fahchouchsm.betterGitCore.commitreport.AiCommitReportGenerator;
+import io.fahchouchsm.betterGitCore.commitreport.AiMemoryStore;
+import io.fahchouchsm.betterGitCore.commitreport.CommitReportDependencies;
+import io.fahchouchsm.betterGitCore.commitreport.CommitReportLimits;
+import io.fahchouchsm.betterGitCore.commitreport.CommitReportOutcome;
+import io.fahchouchsm.betterGitCore.commitreport.CommitReportRequest;
+import io.fahchouchsm.betterGitCore.commitreport.CommitReportStore;
+import io.fahchouchsm.betterGitCore.commitreport.CommitReportValidator;
 import io.fahchouchsm.betterGitCore.commitreport.JGitCommitDataSource;
-import io.fahchouchsm.betterGitCore.configuration.BetterGitConfiguration;
-import io.fahchouchsm.betterGitCore.configuration.BetterGitConfigurationLoader;
-import io.fahchouchsm.betterGitCore.configuration.BetterGitFileStore;
+import io.fahchouchsm.betterGitCore.commitreport.JavaSourceContextCollector;
+import io.fahchouchsm.betterGitCore.commitreport.ProjectMapScanner;
+import io.fahchouchsm.betterGitCore.commitreport.SensitiveContentFilter;
 import io.fahchouchsm.betterGitCore.configuration.AiCommitSettings;
 import io.fahchouchsm.betterGitCore.configuration.AiConfiguration;
 import io.fahchouchsm.betterGitCore.configuration.AiConfigurationLoader;
 import io.fahchouchsm.betterGitCore.configuration.AiCredentialStore;
+import io.fahchouchsm.betterGitCore.configuration.BetterGitConfiguration;
+import io.fahchouchsm.betterGitCore.configuration.BetterGitConfigurationLoader;
+import io.fahchouchsm.betterGitCore.configuration.BetterGitFileStore;
 import io.fahchouchsm.betterGitCore.configuration.FeatureSettings;
 import io.fahchouchsm.betterGitCore.configuration.FeatureStoragePreparer;
 import io.fahchouchsm.betterGitCore.configuration.SonarQubeCredentialStore;
@@ -28,11 +41,12 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Clock;
+import java.time.Instant;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.LinkedHashMap;
 import java.util.stream.Stream;
 
 public final class BetterGitService {
@@ -40,6 +54,9 @@ public final class BetterGitService {
     private final GitIndex index = new GitIndex();
     private final BetterGitConfigurationLoader configurationLoader = new BetterGitConfigurationLoader();
     private final BetterGitFileStore fileStore = new BetterGitFileStore();
+    private final AiMemoryStore memoryStore = new AiMemoryStore(new ProjectMapScanner());
+    private final CommitReportStore reportStore = new CommitReportStore();
+    private final Clock clock = Clock.systemUTC();
 
     public RepositoryStatus status(Path repository) throws IOException {
         Path projectPath = repository(repository);
@@ -105,6 +122,36 @@ public final class BetterGitService {
             arguments.add(request.message());
         }
         return execute(repository, observer, arguments.toArray(String[]::new));
+    }
+
+    public CommitDocumentation prepareCommitDocumentation(
+            Path repository, Map<String, String> environment) throws IOException {
+        Path projectPath = repository(repository);
+        BetterGitConfiguration stored = reportConfiguration(projectPath);
+        AiConfiguration ai = new AiConfigurationLoader().load(
+                projectPath, Map.copyOf(environment), stored.ai().model());
+        BetterGitConfiguration effective = stored.withAiSettings(
+                new AiCommitSettings(true, stored.ai().memoryEnabled(), ai.model()));
+        if (ai.isComplete()) {
+            fileStore.ensureReportsIgnored(projectPath);
+        }
+        CommitReportOutcome outcome = reportGenerator().generate(new CommitReportRequest(
+                projectPath, effective, ai, CommitReportLimits.fromEnvironment(environment)));
+        String markdown = outcome.reportPath() == null ? "" : Files.readString(outcome.reportPath());
+        return CommitDocumentation.from(outcome, markdown);
+    }
+
+    public CommitDocumentationFinalization finalizeCommitDocumentation(
+            Path repository, Path pendingReport, String commitHash) throws IOException {
+        Path projectPath = repository(repository);
+        String markdown = reportStore.readPending(projectPath, pendingReport);
+        String title = new CommitReportValidator().validate(markdown).commitMessage();
+        Path finalizedReport = reportStore.finalizePending(projectPath, pendingReport, commitHash);
+        return finalizeMemory(projectPath, finalizedReport, title, commitHash);
+    }
+
+    public void discardCommitDocumentation(Path repository, Path pendingReport) throws IOException {
+        reportStore.discardPending(repository(repository), pendingReport);
     }
 
     public OperationOutcome merge(
@@ -178,7 +225,33 @@ public final class BetterGitService {
     private CommandRuntime runtime(Path projectPath, ApiConsole console) {
         return new CommandRuntime(
                 projectPath, console, new JGitRepositoryAccess(git), new JGitCommitDataSource(git),
-                git::commitStagedChanges, System.getenv(), Clock.systemUTC(), new AiSystemTextGenerator());
+                git::commitStagedChanges, System.getenv(), clock, new AiSystemTextGenerator());
+    }
+
+    private BetterGitConfiguration reportConfiguration(Path projectPath) throws IOException {
+        return configurationLoader.load(projectPath).orElseGet(() -> new BetterGitConfiguration(
+                BetterGitConfiguration.CURRENT_SCHEMA_VERSION, Instant.now(clock).toString(),
+                projectPath.toString(), false, true, FeatureSettings.disabled(), true,
+                AiCommitSettings.disabled(null)));
+    }
+
+    private AiCommitReportGenerator reportGenerator() {
+        SensitiveContentFilter filter = new SensitiveContentFilter();
+        return new AiCommitReportGenerator(new CommitReportDependencies(
+                new JGitCommitDataSource(git), new AiSystemTextGenerator(), memoryStore,
+                new AiCommitContextBuilder(filter, new JavaSourceContextCollector()),
+                new AiCommitPromptBuilder(), filter, new CommitReportValidator(), reportStore, clock));
+    }
+
+    private CommitDocumentationFinalization finalizeMemory(
+            Path projectPath, Path reportPath, String title, String commitHash) {
+        try {
+            memoryStore.finalizePendingHistory(projectPath, title, commitHash);
+            return new CommitDocumentationFinalization(reportPath.toString(), "");
+        } catch (IOException exception) {
+            return new CommitDocumentationFinalization(reportPath.toString(),
+                    "The report was saved, but BetterGit recent history could not be updated.");
+        }
     }
 
     private static Path repository(Path candidate) {

@@ -79,4 +79,19 @@ class CommitReportStoreTest {
             assertFalse(files.findAny().isPresent());
         }
     }
+
+    @Test
+    void refusesToReadPendingReportThroughSymbolicLink() throws Exception {
+        Path reports = projectPath.resolve(".bettergit/reports");
+        Path outside = projectPath.resolve("outside.md");
+        Files.createDirectories(reports);
+        Files.writeString(outside, "private");
+        Path link = reports.resolve("pending-link.md");
+        Files.createSymbolicLink(link, outside);
+
+        IOException exception = assertThrows(
+                IOException.class, () -> store.readPending(projectPath, link));
+
+        assertTrue(exception.getMessage().contains("regular BetterGit report"));
+    }
 }

@@ -4,9 +4,10 @@ import io.fahchouchsm.betterGitCore.configuration.AtomicFileWriter;
 import io.fahchouchsm.betterGitCore.configuration.BetterGitDirectories;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.StandardCopyOption;
 import java.time.Instant;
 import java.time.ZoneOffset;
@@ -74,17 +75,38 @@ public final class CommitReportStore {
         if (!commitHash.matches("[0-9a-f]{40}")) {
             throw new IllegalArgumentException("Commit hash must contain 40 lowercase hexadecimal characters.");
         }
-        Path reportsDirectory = BetterGitDirectories.child(projectPath, "reports").toAbsolutePath().normalize();
-        Path source = pendingReport.toAbsolutePath().normalize();
-        if (!source.getParent().equals(reportsDirectory) || !Files.isRegularFile(source)) {
-            throw new IOException("Pending report is not a regular BetterGit report file.");
-        }
+        Path reportsDirectory = reportsDirectory(projectPath);
+        Path source = pendingReport(reportsDirectory, pendingReport);
         Path finalizedReport = reportsDirectory.resolve(commitHash + ".md");
         if (Files.exists(finalizedReport)) {
             throw new IOException("A report already exists for commit " + commitHash + ".");
         }
         move(source, finalizedReport);
         return finalizedReport;
+    }
+
+    public String readPending(Path projectPath, Path pendingReport) throws IOException {
+        Path source = pendingReport(reportsDirectory(projectPath), pendingReport);
+        return Files.readString(source, StandardCharsets.UTF_8);
+    }
+
+    public void discardPending(Path projectPath, Path pendingReport) throws IOException {
+        Path source = pendingReport(reportsDirectory(projectPath), pendingReport);
+        Files.delete(source);
+    }
+
+    private static Path reportsDirectory(Path projectPath) throws IOException {
+        return BetterGitDirectories.child(projectPath, "reports").toAbsolutePath().normalize();
+    }
+
+    private static Path pendingReport(Path reportsDirectory, Path candidate) throws IOException {
+        Path source = candidate.toAbsolutePath().normalize();
+        if (!reportsDirectory.equals(source.getParent())
+                || Files.isSymbolicLink(source)
+                || !Files.isRegularFile(source)) {
+            throw new IOException("Pending report is not a regular BetterGit report file.");
+        }
+        return source;
     }
 
     private static Path uniqueReportPath(Path reportsDirectory, Instant createdAt) {

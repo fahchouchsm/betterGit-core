@@ -1,13 +1,17 @@
 package io.fahchouchsm.betterGitCore.api;
 
+import io.fahchouchsm.betterGitCore.commitreport.CommitReportStatus;
+import io.fahchouchsm.betterGitCore.commitreport.CommitReportStore;
 import org.eclipse.jgit.api.Git;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -62,6 +66,48 @@ class BetterGitServiceTest {
 
         assertTrue(failure.getMessage().contains("escapes"));
         assertFalse(Files.exists(projectPath.getParent().resolve("outside.txt")));
+    }
+
+    @Test
+    void reportsMissingAiCredentialsWithoutCallingAProvider() throws Exception {
+        initializeGit();
+        Files.writeString(projectPath.resolve("feature.txt"), "feature\n");
+        BetterGitService service = new BetterGitService();
+        service.stage(projectPath, List.of("feature.txt"));
+
+        CommitDocumentation documentation = service.prepareCommitDocumentation(projectPath, Map.of());
+
+        assertEquals(CommitReportStatus.AI_NOT_CONFIGURED.name(), documentation.status());
+        assertTrue(documentation.markdown().isEmpty());
+        assertTrue(documentation.reportPath().isEmpty());
+    }
+
+    @Test
+    void finalizesOnlyValidatedPendingDocumentation() throws Exception {
+        initializeGit();
+        String markdown = "Description.\n\n## Changes\n- Added docs.\n\n## Validation\nTests passed.\n";
+        Path pending = new CommitReportStore().savePending(projectPath, Instant.EPOCH, markdown);
+        String commitHash = "a".repeat(40);
+
+        CommitDocumentationFinalization finalization = new BetterGitService()
+                .finalizeCommitDocumentation(projectPath, pending, commitHash);
+
+        assertEquals(projectPath.resolve(".bettergit/reports/" + commitHash + ".md").toString(),
+                finalization.reportPath());
+        assertTrue(finalization.warning().isEmpty());
+        assertFalse(Files.exists(pending));
+    }
+
+    @Test
+    void discardsPendingDocumentationWithoutTouchingOtherFiles() throws Exception {
+        initializeGit();
+        Path pending = new CommitReportStore().savePending(
+                projectPath, Instant.EPOCH, "Pending documentation");
+
+        new BetterGitService().discardCommitDocumentation(projectPath, pending);
+
+        assertFalse(Files.exists(pending));
+        assertTrue(Files.isDirectory(projectPath.resolve(".git")));
     }
 
     private void initializeGit() throws Exception {
